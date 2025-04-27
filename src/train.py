@@ -7,12 +7,15 @@ from utils import stft, istft, si_sdr_loss
 def train(cfg):
     # Load config
     with open(cfg) as f: config = yaml.safe_load(f)
+
     # Dataset & Loader
     ds = DroneMixtureDataset(config["data_dir"], config["snr_levels"])
     loader = torch.utils.data.DataLoader(ds, batch_size=config["batch_size"], shuffle=True)
+
     # Model, optimizer, loss
     model = UNetSeparator().to(config["device"])
     opt = optim.Adam(model.parameters(), lr=config["lr"])
+
     # Training loop
     for epoch in range(config["epochs"]):
         model.train()

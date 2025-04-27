@@ -22,4 +22,4 @@ experiments/
 Thumbs.db
 
 # virtual environments
-.venv
+venv

@@ -20,3 +20,6 @@ experiments/
 # System files
 .DS_Store
 Thumbs.db
+
+# virtual environments
+.venv

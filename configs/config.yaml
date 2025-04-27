@@ -1,0 +1,15 @@
+# Configuration file for DroneSoundSeparator
+
+data_dir: data/mixtures
+snr_levels: [-5, 0, 5, 10]   # SNRs used for mixing
+
+batch_size: 16
+epochs: 50
+lr: 0.0003
+
+save_dir: experiments/run1
+device: cuda  # or "cpu" if no GPU available
+sample_rate: 16000
+n_fft: 1024
+hop_length: 512
+win_length: 1024

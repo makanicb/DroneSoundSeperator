@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class ConvBlock(nn.Module):
     """Basic convolutional block: Conv2d -> ReLU -> Conv2d -> ReLU."""

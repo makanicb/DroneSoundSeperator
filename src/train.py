@@ -27,9 +27,11 @@ def train(cfg):
             X = stft(noisy_wav)       # (B, 1, F, T)
             S = stft(clean_wav)
             # Predict mask & reconstruct
-            M = model(X)
-            est_mag = M * X.abs()
-            est_wav = istft(est_mag, X.angle())
+            M = model(torch.abs(X).unsqueeze(1))
+            est_mag = M * torch.abs(X)
+            # Reconstruct complex spectrogram
+            est_spec = est_mag * torch.exp(1j * torch.angle(X))
+            est_wav = istft(est_spec)
             # Loss: time-domain SI-SDR
             loss = si_sdr_loss(est_wav, clean_wav)
             opt.zero_grad(); loss.backward(); opt.step()

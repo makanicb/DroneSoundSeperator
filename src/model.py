@@ -1,71 +1,192 @@
-# src/model.py
+# src/multi_channel_model.py
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class ConvBlock(nn.Module):
-    """Basic convolutional block: Conv2d -> ReLU -> Conv2d -> ReLU."""
-    def __init__(self, in_channels, out_channels):
+class MultiChannelConvBlock(nn.Module):
+    """Convolutional block that preserves multi-channel information."""
+    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1, dropout_rate=0.2, use_batch_norm=True):
         super().__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU()
-        )
+        
+        layers = []
+        # First convolution
+        layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=padding))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm2d(out_channels))
+        layers.append(nn.ReLU())
+        
+        # Second convolution
+        layers.append(nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=padding))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm2d(out_channels))
+        layers.append(nn.ReLU())
+        
+        # Dropout for regularization
+        if dropout_rate > 0:
+            layers.append(nn.Dropout2d(dropout_rate))
+            
+        self.block = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.block(x)
 
-class UNetSeparator(nn.Module):
-    """U-Net architecture for magnitude mask prediction."""
-    def __init__(self, in_channels=1, base_channels=32):
+class MultiChannelEncoder(nn.Module):
+    """Encoder that processes multi-channel audio."""
+    def __init__(self, input_channels, base_channels=32, depth=3, use_batch_norm=True, dropout_rate=0.2):
         super().__init__()
+        self.depth = depth
+        self.encoder_blocks = nn.ModuleList()
+        
+        # Initial block that takes multiple channels
+        self.encoder_blocks.append(
+            MultiChannelConvBlock(
+                input_channels, 
+                base_channels, 
+                dropout_rate=dropout_rate,
+                use_batch_norm=use_batch_norm
+            )
+        )
+        
+        # Remaining encoder blocks
+        for i in range(1, depth):
+            in_channels = base_channels * (2**(i-1))
+            out_channels = base_channels * (2**i)
+            self.encoder_blocks.append(
+                MultiChannelConvBlock(
+                    in_channels, 
+                    out_channels,
+                    dropout_rate=dropout_rate,
+                    use_batch_norm=use_batch_norm
+                )
+            )
 
-        # Encoder
-        self.enc1 = ConvBlock(in_channels, base_channels)
-        self.enc2 = ConvBlock(base_channels, base_channels * 2)
-        self.enc3 = ConvBlock(base_channels * 2, base_channels * 4)
-
-        # Bottleneck
-        self.bottleneck = ConvBlock(base_channels * 4, base_channels * 8)
-
-        # Decoder
-        self.up3 = nn.ConvTranspose2d(base_channels * 8, base_channels * 4, kernel_size=2, stride=2)
-        self.dec3 = ConvBlock(base_channels * 8, base_channels * 4)
-
-        self.up2 = nn.ConvTranspose2d(base_channels * 4, base_channels * 2, kernel_size=2, stride=2)
-        self.dec2 = ConvBlock(base_channels * 4, base_channels * 2)
-
-        self.up1 = nn.ConvTranspose2d(base_channels * 2, base_channels, kernel_size=2, stride=2)
-        self.dec1 = ConvBlock(base_channels * 2, base_channels)
-
-        # Final output layer
-        self.out_conv = nn.Conv2d(base_channels, in_channels, kernel_size=1)
-    
     def forward(self, x):
-        # x shape: (batch, channels, freq_bins, time_steps)
+        features = []
+        for block in self.encoder_blocks:
+            x = block(x)
+            features.append(x)
+            x = F.max_pool2d(x, 2)  # Downsample
+        return features, x
+
+class MultiChannelDecoder(nn.Module):
+    """Decoder for multi-channel audio processing."""
+    def __init__(self, base_channels=32, depth=3, use_batch_norm=True, dropout_rate=0.2):
+        super().__init__()
+        self.depth = depth
+        self.upsample_blocks = nn.ModuleList()
+        self.decoder_blocks = nn.ModuleList()
+        
+        # Create upsampling and decoder blocks
+        for i in range(depth-1, -1, -1):
+            # Channels for each level
+            in_channels = base_channels * (2**i)
+            
+            if i < depth-1:  # Not the bottleneck level
+                in_channels *= 2  # Double for skip connection
+                
+            out_channels = base_channels * (2**max(0, i-1))
+            if i == 0:  # Last level
+                out_channels = base_channels
+            
+            # Upsampling block
+            self.upsample_blocks.append(
+                nn.ConvTranspose2d(in_channels // 2 if i < depth-1 else in_channels,
+                                  out_channels, 
+                                  kernel_size=2, stride=2)
+            )
+            
+            # Decoder block
+            self.decoder_blocks.append(
+                MultiChannelConvBlock(
+                    in_channels, 
+                    out_channels,
+                    dropout_rate=dropout_rate,
+                    use_batch_norm=use_batch_norm
+                )
+            )
+
+    def forward(self, features, bottleneck):
+        x = bottleneck
+        
+        for i in range(self.depth):
+            # Upsample
+            x = self.upsample_blocks[i](x)
+            
+            # Skip connection
+            skip_feature = features[self.depth - i - 1]
+            
+            # Handle cases where dimensions don't match exactly
+            if x.shape[2:] != skip_feature.shape[2:]:
+                x = F.interpolate(x, size=skip_feature.shape[2:], mode='bilinear', align_corners=False)
+                
+            # Concatenate for skip connection
+            x = torch.cat((x, skip_feature), dim=1)
+            
+            # Decode
+            x = self.decoder_blocks[i](x)
+            
+        return x
+
+class MultiChannelUNet(nn.Module):
+    """U-Net architecture for multi-channel audio source separation."""
+    def __init__(self, input_channels=16, output_channels=16, base_channels=32, 
+                 depth=3, dropout_rate=0.2, use_batch_norm=True):
+        super().__init__()
+        
+        self.input_channels = input_channels
+        self.output_channels = output_channels
         
         # Encoder
-        e1 = self.enc1(x)
-        e2 = self.enc2(self._downsample(e1))
-        e3 = self.enc3(self._downsample(e2))
-
+        self.encoder = MultiChannelEncoder(
+            input_channels=input_channels,
+            base_channels=base_channels,
+            depth=depth,
+            dropout_rate=dropout_rate,
+            use_batch_norm=use_batch_norm
+        )
+        
         # Bottleneck
-        b = self.bottleneck(self._downsample(e3))
-
+        bottleneck_channels = base_channels * (2**(depth-1))
+        self.bottleneck = MultiChannelConvBlock(
+            bottleneck_channels, 
+            bottleneck_channels * 2,
+            dropout_rate=dropout_rate,
+            use_batch_norm=use_batch_norm
+        )
+        
         # Decoder
-        d3 = self.dec3(torch.cat([self.up3(b), e3], dim=1))
-        d2 = self.dec2(torch.cat([self.up2(d3), e2], dim=1))
-        d1 = self.dec1(torch.cat([self.up1(d2), e1], dim=1))
-
-        # Output mask
-        mask = torch.sigmoid(self.out_conv(d1))
-
+        self.decoder = MultiChannelDecoder(
+            base_channels=base_channels,
+            depth=depth,
+            dropout_rate=dropout_rate,
+            use_batch_norm=use_batch_norm
+        )
+        
+        # Final output layer (mask for each channel)
+        self.final_conv = nn.Conv2d(base_channels, output_channels, kernel_size=1)
+        
+    def forward(self, x):
+        """
+        Forward pass through the multi-channel U-Net.
+        
+        Args:
+            x: Input tensor of shape [batch, channels, freq_bins, time_frames]
+                where channels is the number of audio channels
+                
+        Returns:
+            Predicted mask of same shape as input
+        """
+        # Encoder
+        features, bottleneck = self.encoder(x)
+        
+        # Bottleneck
+        bottleneck = self.bottleneck(bottleneck)
+        
+        # Decoder with skip connections
+        decoded = self.decoder(features, bottleneck)
+        
+        # Generate mask - apply sigmoid for values in [0,1] range
+        mask = torch.sigmoid(self.final_conv(decoded))
+        
         return mask
-
-    def _downsample(self, x):
-        return F.max_pool2d(x, 2)
-
-

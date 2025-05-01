@@ -1,195 +1,225 @@
-# src/utils.py
+# src/multi_channel_utils.py
 
 import torch
 import torch.nn.functional as F
 import numpy as np
 
-# --- STFT and iSTFT functions ---
-
-def stft(wav, n_fft=1024, hop_length=512, win_length=1024):
+def multi_channel_stft(wav, n_fft=1024, hop_length=512, win_length=1024):
     """
-    Compute Short-Time Fourier Transform.
+    Compute Short-Time Fourier Transform for multi-channel audio.
     
     Args:
-        wav: Input waveform tensor of shape (batch_size, time)
+        wav: Input waveform tensor of shape (batch_size, channels, time)
         n_fft: FFT size
         hop_length: Hop size between frames
         win_length: Window length
         
     Returns:
-        Complex STFT tensor of shape (batch_size, freq_bins, time_frames)
+        Complex STFT tensor of shape (batch_size, channels, freq_bins, time_frames)
     """
-    # Ensure waveform has batch dimension
-    if wav.dim() == 1:
-        wav = wav.unsqueeze(0)
-    
+    batch_size, num_channels, time_length = wav.shape
     window = torch.hann_window(win_length).to(wav.device)
     
-    # Compute STFT
-    stft_matrix = torch.stft(
-        wav,
-        n_fft=n_fft,
-        hop_length=hop_length,
-        win_length=win_length,
-        window=window,
-        return_complex=True
-    )
+    # Create output tensor to store results
+    stft_results = []
     
-    return stft_matrix
+    # Process each channel separately
+    for ch in range(num_channels):
+        stft_ch = torch.stft(
+            wav[:, ch, :],
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            return_complex=True
+        )
+        stft_results.append(stft_ch)
+    
+    # Stack channels
+    stft_tensor = torch.stack(stft_results, dim=1)
+    
+    return stft_tensor
 
-
-def istft(stft_matrix, n_fft=1024, hop_length=512, win_length=1024, length=None):
+def multi_channel_istft(stft_matrix, n_fft=1024, hop_length=512, win_length=1024, length=None):
     """
-    Compute Inverse Short-Time Fourier Transform.
+    Compute Inverse Short-Time Fourier Transform for multi-channel audio.
     
     Args:
-        stft_matrix: Complex STFT tensor of shape (batch_size, freq_bins, time_frames)
+        stft_matrix: Complex STFT tensor of shape (batch_size, channels, freq_bins, time_frames)
         n_fft: FFT size
         hop_length: Hop size between frames
         win_length: Window length
         length: Optional target length for the output waveform
         
     Returns:
-        Reconstructed waveform tensor of shape (batch_size, time)
+        Reconstructed waveform tensor of shape (batch_size, channels, time)
     """
+    batch_size, num_channels = stft_matrix.shape[0], stft_matrix.shape[1]
     window = torch.hann_window(win_length).to(stft_matrix.device)
     
-    # Compute inverse STFT
-    wav = torch.istft(
-        stft_matrix,
-        n_fft=n_fft,
-        hop_length=hop_length,
-        win_length=win_length,
-        window=window,
-        length=length
-    )
+    # Process each channel separately
+    wav_results = []
     
-    return wav
+    for ch in range(num_channels):
+        wav_ch = torch.istft(
+            stft_matrix[:, ch],
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            window=window,
+            length=length
+        )
+        wav_results.append(wav_ch)
+    
+    # Stack channels
+    wav_tensor = torch.stack(wav_results, dim=1)
+    
+    return wav_tensor
 
-
-# --- SI-SDR Loss ---
-
-def si_sdr_loss(pred, target, eps=1e-8):
+def multi_channel_si_sdr_loss(pred, target, eps=1e-8):
     """
-    Scale-Invariant Signal-to-Distortion Ratio (SI-SDR) Loss.
+    Scale-Invariant Signal-to-Distortion Ratio (SI-SDR) Loss for multi-channel audio.
     
     Args:
-        pred: Predicted waveform of shape (batch_size, time)
-        target: Target waveform of shape (batch_size, time)
+        pred: Predicted waveform of shape (batch_size, channels, time)
+        target: Target waveform of shape (batch_size, channels, time)
         eps: Small constant for numerical stability
         
     Returns:
         Negative SI-SDR loss (to minimize)
     """
-    # Remove mean (DC component)
+    # Remove mean (DC component) per channel
     pred = pred - pred.mean(dim=-1, keepdim=True)
     target = target - target.mean(dim=-1, keepdim=True)
 
-    # Projection
-    s_target = (torch.sum(pred * target, dim=-1, keepdim=True) * target) / (torch.sum(target ** 2, dim=-1, keepdim=True) + eps)
-    e_noise = pred - s_target
+    # Compute SI-SDR for each channel
+    batch_size, num_channels = pred.shape[0], pred.shape[1]
+    si_sdr_values = []
+    
+    for b in range(batch_size):
+        for ch in range(num_channels):
+            pred_ch = pred[b, ch]
+            target_ch = target[b, ch]
+            
+            # Projection
+            s_target = ((pred_ch * target_ch).sum() * target_ch) / ((target_ch ** 2).sum() + eps)
+            e_noise = pred_ch - s_target
+            
+            # SI-SDR
+            si_sdr_ch = 10 * torch.log10((s_target ** 2).sum() / ((e_noise ** 2).sum() + eps) + eps)
+            si_sdr_values.append(si_sdr_ch)
+    
+    # Average over all channels and batches
+    si_sdr_loss = -torch.stack(si_sdr_values).mean()
+    
+    return si_sdr_loss
 
-    # SI-SDR
-    si_sdr = 10 * torch.log10((s_target ** 2).sum(dim=-1) / ((e_noise ** 2).sum(dim=-1) + eps) + eps)
-
-    return -si_sdr.mean()  # Negative because we want to minimize the loss
-
-
-# --- SDR / SIR / SAR Metrics ---
-
-def compute_sdr_sir_sar(reference, estimation, compute_permutation=False):
+def compute_multi_channel_metrics(reference, estimation):
     """
-    Compute Source-to-Distortion Ratio (SDR), Source-to-Interference Ratio (SIR),
-    and Source-to-Artifacts Ratio (SAR) using mir_eval.
+    Compute metrics for multi-channel source separation.
     
     Args:
-        reference: Reference source signal (numpy array)
-        estimation: Estimated source signal (numpy array)
-        compute_permutation: Whether to compute the best permutation
+        reference: Reference source signals [channels, samples]
+        estimation: Estimated source signals [channels, samples]
         
     Returns:
-        SDR, SIR, SAR values in dB
+        Dictionary of metrics
     """
+    if torch.is_tensor(reference):
+        reference = reference.detach().cpu().numpy()
+    if torch.is_tensor(estimation):
+        estimation = estimation.detach().cpu().numpy()
+    
+    # Make sure they are numpy arrays
+    reference = np.asarray(reference)
+    estimation = np.asarray(estimation)
+    
+    # Initialize metrics
+    sdr_values = []
+    sir_values = []
+    sar_values = []
+    
+    num_channels = reference.shape[0]
+
     try:
         import mir_eval.separation
         
-        # Ensure signals are 2D (sources x samples)
-        if reference.ndim == 1:
-            reference = reference[np.newaxis, :]
-        if estimation.ndim == 1:
-            estimation = estimation[np.newaxis, :]
+        # For each channel, compute metrics
+        for ch in range(num_channels):
+            ref_ch = reference[ch:ch+1]  # Keep dimension for mir_eval
+            est_ch = estimation[ch:ch+1]  # Keep dimension for mir_eval
+            
+            # Compute metrics
+            sdr, sir, sar, _ = mir_eval.separation.bss_eval_sources(
+                ref_ch,
+                est_ch,
+                compute_permutation=False
+            )
+            
+            sdr_values.append(sdr[0])
+            sir_values.append(sir[0])
+            sar_values.append(sar[0])
         
-        # Compute metrics
-        sdr, sir, sar, _ = mir_eval.separation.bss_eval_sources(
-            reference,
-            estimation,
-            compute_permutation=compute_permutation
-        )
+        # Average metrics
+        avg_sdr = np.mean(sdr_values)
+        avg_sir = np.mean(sir_values)
+        avg_sar = np.mean(sar_values)
         
-        return sdr[0], sir[0], sar[0]
-    
+        return {
+            'sdr': avg_sdr,
+            'sir': avg_sir,
+            'sar': avg_sar,
+            'sdr_per_channel': sdr_values,
+            'sir_per_channel': sir_values,
+            'sar_per_channel': sar_values
+        }
+        
     except ImportError:
         print("mir_eval package not found. Please install it with: pip install mir_eval")
-        return 0.0, 0.0, 0.0
+        return {
+            'sdr': 0.0,
+            'sir': 0.0,
+            'sar': 0.0
+        }
     except Exception as e:
         print(f"Error computing separation metrics: {e}")
-        return 0.0, 0.0, 0.0
+        return {
+            'sdr': 0.0,
+            'sir': 0.0,
+            'sar': 0.0
+        }
 
-
-# --- Visualization Helper Functions ---
-
-def plot_waveform(waveform, sample_rate=16000, title="Waveform"):
+def save_multi_channel_audio(audio_tensor, output_path, sample_rate=16000):
     """
-    Plot a waveform using matplotlib.
+    Save multi-channel audio tensor to a file.
     
     Args:
-        waveform: Audio waveform (numpy array or tensor)
-        sample_rate: Audio sample rate
-        title: Plot title
-        
-    Returns:
-        Matplotlib figure
+        audio_tensor: Audio tensor of shape [channels, samples]
+        output_path: Path to save audio file
+        sample_rate: Sample rate
     """
-    import matplotlib.pyplot as plt
+    # Convert to numpy
+    if torch.is_tensor(audio_tensor):
+        audio_tensor = audio_tensor.detach().cpu().numpy()
     
-    if torch.is_tensor(waveform):
-        waveform = waveform.cpu().numpy()
-    
-    plt.figure(figsize=(10, 3))
-    plt.plot(waveform)
-    plt.title(title)
-    plt.xlabel("Samples")
-    plt.ylabel("Amplitude")
-    plt.tight_layout()
-    
-    return plt.gcf()
-
-
-def plot_spectrogram(spectrogram, title="Spectrogram"):
-    """
-    Plot a spectrogram using matplotlib.
-    
-    Args:
-        spectrogram: Spectrogram (numpy array or tensor)
-        title: Plot title
-        
-    Returns:
-        Matplotlib figure
-    """
-    import matplotlib.pyplot as plt
-    import librosa.display
-    
-    if torch.is_tensor(spectrogram):
-        spectrogram = spectrogram.cpu().numpy()
-    
-    plt.figure(figsize=(10, 4))
-    librosa.display.specshow(
-        librosa.amplitude_to_db(spectrogram, ref=np.max),
-        y_axis='log',
-        x_axis='time'
-    )
-    plt.colorbar(format='%+2.0f dB')
-    plt.title(title)
-    plt.tight_layout()
-    
-    return plt.gcf()
+    # Check if output is .npy
+    if output_path.endswith('.npy'):
+        # Save as numpy array
+        np.save(output_path, audio_tensor)
+        print(f"Multi-channel audio saved to {output_path}")
+    else:
+        # For other formats, use soundfile/librosa
+        try:
+            import soundfile as sf
+            
+            # Save as multi-channel wav
+            # Transpose to [samples, channels] for soundfile
+            audio_array = audio_tensor.T
+            sf.write(output_path, audio_array, sample_rate)
+            print(f"Multi-channel audio saved to {output_path}")
+        except Exception as e:
+            print(f"Error saving audio: {e}")
+            # Fallback to numpy save
+            np_path = output_path.rsplit('.', 1)[0] + '.npy'
+            np.save(np_path, audio_tensor)
+            print(f"Failed to save in requested format. Saved as numpy array to {np_path}")

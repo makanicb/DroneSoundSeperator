@@ -1,135 +1,195 @@
-# src/data_loader.py
+# src/multi_channel_loader.py
 
 import os
-import random
+import numpy as np
 import torch
-import torchaudio
-import pandas as pd
 from torch.utils.data import Dataset
+import json
 import logging
+from pathlib import Path
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class DroneMixtureDataset(Dataset):
-    def __init__(self, data_dir, snr_levels=[-5, 0, 5, 10], sample_rate=16000, mode='train', split=0.8):
+class MultiChannelDroneDataset(Dataset):
+    """Dataset for multi-channel drone audio processing."""
+    
+    def __init__(self, data_dir, sample_rate=16000, chunk_size_seconds=3.0, mode='train', split=0.8):
         """
-        Dataset for drone sound separation.
+        Initialize the multi-channel drone dataset.
         
         Args:
-            data_dir (str): Base directory with data folders
-            snr_levels (list): SNR levels used for mixing
+            data_dir (str): Directory containing session folders with audio_chunks and metadata
             sample_rate (int): Audio sample rate
+            chunk_size_seconds (float): Length of audio chunks in seconds
             mode (str): 'train' or 'test'
             split (float): Train/test split ratio (0.0-1.0)
         """
-        self.data_dir = data_dir
+        self.data_dir = Path(data_dir)
         self.sample_rate = sample_rate
-        self.snr_levels = snr_levels
+        self.chunk_size_samples = int(chunk_size_seconds * sample_rate)
         self.mode = mode
         
-        # Base data directories
-        if not os.path.exists(data_dir):
-            raise FileNotFoundError(f"Data directory not found: {data_dir}")
-            
-        # Get the parent directory to access subdirectories
-        parent_dir = os.path.dirname(data_dir)
+        # Find all session directories
+        self.session_dirs = [d for d in self.data_dir.iterdir() if d.is_dir() and d.name.startswith("20")]
+        logger.info(f"Found {len(self.session_dirs)} session directories")
         
-        # Check metadata file
-        metadata_path = os.path.join(parent_dir, "metadata.csv")
-        if os.path.exists(metadata_path):
-            self.metadata = pd.read_csv(metadata_path)
-            logger.info(f"Loaded metadata with {len(self.metadata)} entries")
-        else:
-            logger.warning(f"Metadata file not found: {metadata_path}")
-            self.metadata = None
+        # Load metadata and audio chunks from each session
+        self.audio_chunks = []
+        self.metadata_list = []
         
-        # Mixture directory
-        mixture_dir = os.path.join(parent_dir, "mixtures")
-        clean_dir = os.path.join(parent_dir, "clean_drone")
-        
-        if not os.path.exists(mixture_dir):
-            raise FileNotFoundError(f"Mixtures directory not found: {mixture_dir}")
-        if not os.path.exists(clean_dir):
-            raise FileNotFoundError(f"Clean drone directory not found: {clean_dir}")
-            
-        # Preload file paths
-        self.mixture_paths = []
-        self.clean_paths = []
-
-        # Find all mixture files
-        mixture_files = [f for f in os.listdir(mixture_dir) if f.endswith('.wav')]
-        
-        # Create train/test split
-        random.seed(42)  # For reproducibility
-        random.shuffle(mixture_files)
-        split_idx = int(len(mixture_files) * split)
-        
-        if mode == 'train':
-            file_list = mixture_files[:split_idx]
-        else:  # test
-            file_list = mixture_files[split_idx:]
-        
-        # For each mixture file, find corresponding clean file
-        for fname in file_list:
-            # Extract original clean file name from mixture filename
-            # Assuming format: cleanfile_mixed_with_noisefile_snrX.wav
-            clean_file = fname.split('_mixed_with_')[0] + '.wav'
-            
-            mixture_path = os.path.join(mixture_dir, fname)
-            clean_path = os.path.join(clean_dir, clean_file)
-            
-            # Check if clean file exists
-            if not os.path.exists(clean_path):
-                logger.warning(f"Clean file not found: {clean_path}")
+        for session_dir in self.session_dirs:
+            metadata_file = session_dir / "metadata.json"
+            if not metadata_file.exists():
+                logger.warning(f"No metadata.json found in {session_dir}")
                 continue
                 
-            self.mixture_paths.append(mixture_path)
-            self.clean_paths.append(clean_path)
-
-        if not self.mixture_paths:
-            raise ValueError(f"No valid audio pairs found in {mixture_dir}")
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                
+                # Get audio chunks
+                chunks_dir = session_dir / "audio_chunks"
+                if not chunks_dir.exists():
+                    logger.warning(f"No audio_chunks directory found in {session_dir}")
+                    continue
+                    
+                chunk_files = sorted([f for f in chunks_dir.glob("*.npy")])
+                
+                # Map each chunk to its metadata information
+                for chunk_file in chunk_files:
+                    chunk_index = int(chunk_file.stem.split('_')[-1])
+                    
+                    # Find corresponding chunk metadata
+                    chunk_meta = None
+                    for chunk in metadata.get('audio_chunks_timestamps', []):
+                        if chunk.get('chunk_index') == chunk_index:
+                            chunk_meta = chunk
+                            break
+                    
+                    if chunk_meta:
+                        self.audio_chunks.append(chunk_file)
+                        
+                        # Copy session metadata and add chunk-specific metadata
+                        combined_meta = metadata.copy()
+                        combined_meta['chunk_metadata'] = chunk_meta
+                        self.metadata_list.append(combined_meta)
+                
+            except Exception as e:
+                logger.error(f"Error processing session {session_dir}: {str(e)}")
+        
+        logger.info(f"Loaded {len(self.audio_chunks)} audio chunks across all sessions")
+        
+        # Split data into train/test
+        indices = list(range(len(self.audio_chunks)))
+        split_idx = int(len(indices) * split)
+        
+        if mode == 'train':
+            self.indices = indices[:split_idx]
+        else:  # test
+            self.indices = indices[split_idx:]
             
-        logger.info(f"Loaded {len(self.mixture_paths)} audio pairs for {mode}")
+        logger.info(f"Using {len(self.indices)} chunks for {mode}")
 
     def __len__(self):
-        return len(self.mixture_paths)
+        return len(self.indices)
 
     def __getitem__(self, idx):
+        """
+        Get an audio chunk.
+        
+        Returns:
+            multi_channel_audio: Tensor of shape [channels, samples]
+            metadata: Dictionary with metadata about the chunk
+        """
+        index = self.indices[idx]
+        chunk_path = self.audio_chunks[index]
+        metadata = self.metadata_list[index]
+        
         try:
-            # Load noisy mixture
-            mixture, sr = torchaudio.load(self.mixture_paths[idx])
-            # Load clean drone sound
-            clean, sr = torchaudio.load(self.clean_paths[idx])
+            # Load multi-channel audio from numpy file
+            multi_channel_audio = np.load(chunk_path)
             
-            # Resample if needed
-            if sr != self.sample_rate:
-                resampler = torchaudio.transforms.Resample(sr, self.sample_rate)
-                mixture = resampler(mixture)
-                clean = resampler(clean)
-
-            # Random crop if too long
-            target_len = self.sample_rate * 3  # 3 seconds
-            if mixture.size(1) > target_len:
-                start = random.randint(0, mixture.size(1) - target_len)
-                mixture = mixture[:, start:start+target_len]
-                clean = clean[:, start:start+target_len]
-            else:
-                # Pad if too short
-                pad_len = target_len - mixture.size(1)
-                mixture = torch.nn.functional.pad(mixture, (0, pad_len))
-                clean = torch.nn.functional.pad(clean, (0, pad_len))
-
-            return mixture.squeeze(0), clean.squeeze(0)  # Remove channel dim for simplicity
+            # Convert to tensor [channels, samples]
+            # If loaded as [samples, channels], transpose
+            if multi_channel_audio.shape[0] > multi_channel_audio.shape[1]:
+                multi_channel_audio = multi_channel_audio.T
+                
+            # Ensure the audio is in float32 format and normalized between -1 and 1
+            if multi_channel_audio.dtype != np.float32:
+                if multi_channel_audio.dtype == np.int16:
+                    multi_channel_audio = multi_channel_audio.astype(np.float32) / 32768.0
+                elif multi_channel_audio.dtype == np.int32:
+                    multi_channel_audio = multi_channel_audio.astype(np.float32) / 2147483648.0
+                elif multi_channel_audio.dtype == np.uint8:
+                    multi_channel_audio = (multi_channel_audio.astype(np.float32) - 128) / 128.0
+            
+            # Make sure it's normalized
+            max_val = np.max(np.abs(multi_channel_audio))
+            if max_val > 1.0:
+                multi_channel_audio = multi_channel_audio / max_val
+                
+            # Convert to tensor
+            audio_tensor = torch.tensor(multi_channel_audio, dtype=torch.float32)
+            
+            # Handle variable length - either crop or pad to target length
+            if audio_tensor.shape[1] > self.chunk_size_samples:
+                # Randomly crop
+                start = torch.randint(0, audio_tensor.shape[1] - self.chunk_size_samples + 1, (1,)).item()
+                audio_tensor = audio_tensor[:, start:start + self.chunk_size_samples]
+            elif audio_tensor.shape[1] < self.chunk_size_samples:
+                # Pad with zeros
+                padding = self.chunk_size_samples - audio_tensor.shape[1]
+                audio_tensor = torch.nn.functional.pad(audio_tensor, (0, padding))
+            
+            return audio_tensor, metadata
             
         except Exception as e:
-            logger.error(f"Error loading files: {self.mixture_paths[idx]} / {self.clean_paths[idx]}")
-            logger.error(f"Error details: {str(e)}")
-            # Return a default item or try the next one
-            if idx < len(self) - 1:
-                return self.__getitem__(idx + 1)
-            else:
-                # Create zeros as fallback
-                dummy = torch.zeros(self.sample_rate * 3)
-                return dummy, dummy
+            logger.error(f"Error loading {chunk_path}: {str(e)}")
+            # Return a default item as fallback
+            channels = 16  # Assuming 16 channels from UMA-16
+            dummy_audio = torch.zeros((channels, self.chunk_size_samples), dtype=torch.float32)
+            return dummy_audio, metadata
+
+def load_and_preprocess_npy(file_path, target_sr=16000):
+    """
+    Load a .npy file containing multi-channel audio data.
+    
+    Args:
+        file_path: Path to the .npy file
+        target_sr: Target sample rate
+        
+    Returns:
+        Tensor of shape [channels, samples]
+    """
+    try:
+        # Load numpy array
+        multi_channel_audio = np.load(file_path)
+        
+        # Transpose if needed
+        if multi_channel_audio.shape[0] > multi_channel_audio.shape[1]:
+            multi_channel_audio = multi_channel_audio.T
+            
+        # Normalize if needed
+        if multi_channel_audio.dtype != np.float32:
+            if multi_channel_audio.dtype == np.int16:
+                multi_channel_audio = multi_channel_audio.astype(np.float32) / 32768.0
+            elif multi_channel_audio.dtype == np.int32:
+                multi_channel_audio = multi_channel_audio.astype(np.float32) / 2147483648.0
+            elif multi_channel_audio.dtype == np.uint8:
+                multi_channel_audio = (multi_channel_audio.astype(np.float32) - 128) / 128.0
+        
+        # Ensure it's normalized
+        max_val = np.max(np.abs(multi_channel_audio))
+        if max_val > 1.0:
+            multi_channel_audio = multi_channel_audio / max_val
+            
+        # Convert to tensor
+        audio_tensor = torch.tensor(multi_channel_audio, dtype=torch.float32)
+        
+        return audio_tensor
+        
+    except Exception as e:
+        logger.error(f"Error loading {file_path}: {str(e)}")
+        return None

@@ -29,6 +29,17 @@ DroneSoundSeparator/
 │   ├── demo.py            # Real-time processing demo
 │   └── utils.py           # STFT/iSTFT, helpers, metrics
 │
+├── tests/
+│   ├── test_data/         # Sample audio files
+│   │   ├── clean.npy      # 3s of clean drone audio (16ch)
+│   │   ├── noise.npy      # 3s of noise (16ch)
+│   │   └── metadata.json  # Sample metadata
+│   ├── conftest.py        # Shared fixtures
+│   ├── test_core.py       # I/O and core logic
+│   ├── test_model.py      # Model tests
+│   ├── test_perf.py       # Performance tests
+│   └── test_edge.py       # Edge cases
+│
 ├── configs/
 │   └── config.yaml        # Experiment configuration
 │
@@ -36,6 +47,7 @@ DroneSoundSeparator/
 │   └── run1/              # Logs, checkpoints, TensorBoard
 │
 ├── requirements.txt
+├── requirements-test.txt  # Testing dependencies
 ├── .gitignore
 └── README.md
 ```
@@ -99,6 +111,14 @@ Training progress can be monitored via TensorBoard:
 ```bash
 tensorboard --logdir experiments/run1/logs
 ```
+
+## 🧪 Testing Suite
+
+We use `pytest` for comprehensive unit testing. To run all tests:
+
+```bash
+pip install -r requirements-test.txt
+pytest tests/ -v
 
 ## Credits
 

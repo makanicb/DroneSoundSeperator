@@ -106,55 +106,37 @@ class MultiChannelDroneDataset(Dataset):
         index = self.indices[idx]
         chunk_path = self.audio_chunks[index]
         metadata = self.metadata_list[index]
-        
+    
         try:
-            # Load multi-channel audio from numpy file
-            multi_channel_audio = np.load(chunk_path)
+            audio = np.load(chunk_path)
+        
+            # Enforce (samples, channels) format
+            if audio.shape[0] < audio.shape[1]:  # Assume (C,S) if C < S
+                audio = audio.T
+        
+            # Validate shape
+            assert audio.ndim == 2, f"Audio must be 2D (got shape {audio.shape})"
+            assert audio.shape[1] in [1, 16], f"Expected 1/16 channels (got {audio.shape[1]})"
+        
+            # Convert to tensor and normalize
+            audio_tensor = torch.from_numpy(audio).float()
+            audio_tensor = audio_tensor / (torch.max(torch.abs(audio_tensor)) + 1e-8)
+        
+            # Handle length
+            target_samples = int(self.sample_rate * self.chunk_size_seconds)
+            if audio_tensor.shape[0] > target_samples:
+                start = torch.randint(0, audio_tensor.shape[0] - target_samples, (1,))
+                audio_tensor = audio_tensor[start:start+target_samples, :]
+            elif audio_tensor.shape[0] < target_samples:
+                padding = target_samples - audio_tensor.shape[0]
+                audio_tensor = F.pad(audio_tensor, (0, 0, 0, padding))
             
-            # Convert to tensor [channels, samples]
-            # If loaded as [samples, channels], transpose
-            if multi_channel_audio.shape[0] > multi_channel_audio.shape[1]:
-                multi_channel_audio = multi_channel_audio.T
+            return audio_tensor.permute(1, 0), metadata  # (C,S) format expected by model
 
-            # Verify channel count matches expected hardware
-            if multi_channel_audio.shape[0] != 16:
-                logger.warning(f"Unexpected channel count {multi_channel_audio.shape[0]} in {chunk_path}")
-                
-            # Ensure the audio is in float32 format and normalized between -1 and 1
-            if multi_channel_audio.dtype != np.float32:
-                if multi_channel_audio.dtype == np.int16:
-                    multi_channel_audio = multi_channel_audio.astype(np.float32) / 32768.0
-                elif multi_channel_audio.dtype == np.int32:
-                    multi_channel_audio = multi_channel_audio.astype(np.float32) / 2147483648.0
-                elif multi_channel_audio.dtype == np.uint8:
-                    multi_channel_audio = (multi_channel_audio.astype(np.float32) - 128) / 128.0
-            
-            # Make sure it's normalized
-            max_val = np.max(np.abs(multi_channel_audio))
-            if max_val > 1.0:
-                multi_channel_audio = multi_channel_audio / max_val
-                
-            # Convert to tensor
-            audio_tensor = torch.tensor(multi_channel_audio, dtype=torch.float32)
-            
-            # Handle variable length - either crop or pad to target length
-            if audio_tensor.shape[1] > self.chunk_size_samples:
-                # Randomly crop
-                start = torch.randint(0, audio_tensor.shape[1] - self.chunk_size_samples + 1, (1,)).item()
-                audio_tensor = audio_tensor[:, start:start + self.chunk_size_samples]
-            elif audio_tensor.shape[1] < self.chunk_size_samples:
-                # Pad with zeros
-                padding = self.chunk_size_samples - audio_tensor.shape[1]
-                audio_tensor = torch.nn.functional.pad(audio_tensor, (0, padding))
-            
-            return audio_tensor, metadata
-            
         except Exception as e:
             logger.error(f"Error loading {chunk_path}: {str(e)}")
-            # Return a default item as fallback
-            channels = 16  # Assuming 16 channels from UMA-16
-            dummy_audio = torch.zeros((channels, self.chunk_size_samples), dtype=torch.float32)
-            return dummy_audio, metadata
+            # Return silent dummy audio
+            return torch.zeros(16, int(self.sample_rate * self.chunk_size_seconds)), metadata
 
 def load_and_preprocess_npy(file_path, target_sr=16000):
     """

@@ -51,64 +51,65 @@ def mix_audio_files(clean_file, noise_file, snr_db, output_file, sample_rate=160
         'snr': snr_db
     }
 
+def mix_audio_npy(clean_path, noise_path, snr_db, output_path):
+    """Mix mono drone audio with multichannel noise at target SNR"""
+    clean = np.load(clean_path)[:, 0]  # Ensure mono (S,) shape
+    noise = np.load(noise_path)  # (S, C)
+    
+    # Match lengths
+    min_len = min(len(clean), noise.shape[0])
+    clean = clean[:min_len]
+    noise = noise[:min_len, :]
+    
+    # SNR scaling per channel
+    clean_power = np.mean(clean**2)
+    scaled_noise = np.zeros_like(noise)
+    for c in range(noise.shape[1]):
+        noise_power = np.mean(noise[:, c]**2)
+        k = np.sqrt(clean_power / (10**(snr_db/10) * noise_power))
+        scaled_noise[:, c] = noise[:, c] * k
+    
+    # Mix and normalize
+    mixed = clean.reshape(-1, 1) + scaled_noise  # Broadcast to multichannel
+    mixed = mixed / (np.max(np.abs(mixed)) + 1e-8) * 0.9  # Peak at -1dBFS
+    
+    np.save(output_path, mixed.astype(np.float32))
+    return output_path
+
 def create_dataset(config_path):
     """Create a dataset of mixed drone and noise audio files."""
-    # Load config
-    with open(config_path, 'r') as f:
+
+    with open(config_path) as f:
         config = yaml.safe_load(f)
     
-    # Setup directories
-    data_dir = os.path.dirname(config['data_dir'])
-    clean_dir = os.path.join(data_dir, 'clean_drone')
-    noise_dir = os.path.join(data_dir, 'noise')
-    mixture_dir = os.path.join(data_dir, 'mixtures')
-    
-    # Create output directories if they don't exist
-    os.makedirs(mixture_dir, exist_ok=True)
-    
-    # Get list of audio files
-    clean_files = [os.path.join(clean_dir, f) for f in os.listdir(clean_dir) if f.endswith(('.wav', '.flac', '.mp3'))]
-    noise_files = [os.path.join(noise_dir, f) for f in os.listdir(noise_dir) if f.endswith(('.wav', '.flac', '.mp3'))]
-    
-    if not clean_files:
-        print(f"No audio files found in {clean_dir}")
-        return
-    
-    if not noise_files:
-        print(f"No audio files found in {noise_dir}")
-        return
-    
-    # Prepare metadata
     metadata = []
-    
-    # Create mixtures
-    for i, clean_file in enumerate(tqdm(clean_files, desc="Creating mixtures")):
-        clean_name = os.path.basename(clean_file).split('.')[0]
-        
+    clean_files = [f for f in os.listdir(os.path.join(config['data_dir'], 'clean_drone') 
+                  if f.endswith('.npy')]
+    noise_files = [f for f in os.listdir(os.path.join(config['data_dir'], 'noise')) 
+                   if f.endswith('.npy')]
+
+    for clean_file in tqdm(clean_files, desc='Creating mixtures'):
+        clean_path = os.path.join(config['data_dir'], 'clean_drone', clean_file)
         for snr in config['snr_levels']:
-            # Pick a random noise file
             noise_file = random.choice(noise_files)
-            noise_name = os.path.basename(noise_file).split('.')[0]
+            noise_path = os.path.join(config['data_dir'], 'noise', noise_file)
             
-            # Define output filename
-            output_name = f"{clean_name}_mixed_with_{noise_name}_snr{snr}.wav"
-            output_file = os.path.join(mixture_dir, output_name)
+            output_name = f"{os.path.splitext(clean_file)[0]}_snr{snr}.npy"
+            output_path = os.path.join(config['data_dir'], 'mixtures', output_name)
             
-            # Mix files
-            mix_info = mix_audio_files(
-                clean_file, 
-                noise_file, 
-                snr, 
-                output_file,
-                sample_rate=config['sample_rate']
-            )
+            mix_audio_npy(clean_path, noise_path, snr, output_path)
             
-            metadata.append(mix_info)
+            metadata.append({
+                'mixture': output_path,
+                'clean': clean_path,
+                'noise': noise_path,
+                'snr': snr
+            })
     
     # Save metadata
-    metadata_df = pd.DataFrame(metadata)
-    metadata_df.to_csv(os.path.join(data_dir, 'metadata.csv'), index=False)
-    
+    with open(os.path.join(config['data_dir'], 'metadata.json'), 'w') as f:
+        json.dump(metadata, f, indent=2)
+
     print(f"Created {len(metadata)} mixture files")
     print(f"Metadata saved to {os.path.join(data_dir, 'metadata.csv')}")
 

@@ -11,27 +11,28 @@ from tqdm import tqdm
 from model import UNetSeparator
 from utils import stft, istft
 
+def load_audio(input_path, target_sr=16000):
+    """Load .npy or .wav with automatic resampling"""
+    if input_path.endswith('.npy'):
+        audio = np.load(input_path)
+        if audio.ndim == 1:
+            audio = audio[:, np.newaxis]  # (S,) → (S,1)
+        sr = target_sr  # Assume npy is at target SR
+    else:  # WAV fallback
+        import soundfile as sf
+        audio, sr = sf.read(input_path)
+        if len(audio.shape) == 1:
+            audio = audio[:, np.newaxis]
+        if sr != target_sr:
+            from librosa import resample
+            audio = resample(audio.T, orig_sr=sr, target_sr=target_sr).T
+    
+    return torch.FloatTensor(audio), target_sr
+
 def process_audio_file(model, input_file, output_file, config):
-    """Process a single audio file through the trained model."""
-    # Load audio
-    print(f"Loading audio file: {input_file}")
-    audio, sr = sf.read(input_file)
-    
-    # Resample if needed
-    if sr != config['sample_rate']:
-        print(f"Resampling from {sr} to {config['sample_rate']} Hz")
-        import librosa
-        audio = librosa.resample(audio, orig_sr=sr, target_sr=config['sample_rate'])
-        sr = config['sample_rate']
-    
-    # Convert to mono if needed
-    if len(audio.shape) > 1 and audio.shape[1] > 1:
-        print("Converting stereo to mono")
-        audio = np.mean(audio, axis=1)
-    
-    # Convert to tensor
-    audio_tensor = torch.FloatTensor(audio).to(model.device)
-    
+    audio_tensor, sr = load_audio(input_file, config['sample_rate'])
+    audio_tensor = audio_tensor.to(model.device)
+
     # Process in chunks to simulate real-time processing
     chunk_size = sr * 3  # 3 seconds chunks
     hop_size = sr * 1    # 1 second overlap
@@ -83,8 +84,12 @@ def process_audio_file(model, input_file, output_file, config):
     
     # Save output
     print(f"Saving processed audio to: {output_file}")
-    sf.write(output_file, output_audio, sr)
-    
+
+    np.save(output_file.replace('.wav', '.npy'), output_audio.cpu().numpy())
+    if output_file.endswith('.wav'):
+        import soundfile as sf
+        sf.write(output_file, output_audio.cpu().numpy(), sr) 
+
     return output_file
 
 def main(args):

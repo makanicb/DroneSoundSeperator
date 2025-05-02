@@ -2,6 +2,11 @@
 
 🚁 A neural network project to isolate drone sounds from noisy environments, inspired by modern audio separation techniques.
 
+## Input Specifications
+- Accepts multi-channel (16-channel) audio from UMA-16V2 array
+- Supports original sample rates up to 44.1kHz (automatically resampled to 16kHz)
+- Processes audio chunks of any length (automatically split into 3s segments)
+
 ## Project Structure
 
 ```

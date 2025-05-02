@@ -115,6 +115,10 @@ class MultiChannelDroneDataset(Dataset):
             # If loaded as [samples, channels], transpose
             if multi_channel_audio.shape[0] > multi_channel_audio.shape[1]:
                 multi_channel_audio = multi_channel_audio.T
+
+            # Verify channel count matches expected hardware
+            if multi_channel_audio.shape[0] != 16:
+                logger.warning(f"Unexpected channel count {multi_channel_audio.shape[0]} in {chunk_path}")
                 
             # Ensure the audio is in float32 format and normalized between -1 and 1
             if multi_channel_audio.dtype != np.float32:

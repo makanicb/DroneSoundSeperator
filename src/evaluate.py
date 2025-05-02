@@ -38,10 +38,26 @@ def evaluate(config_path, checkpoint_path):
     
     # Evaluation metrics
     all_sdr, all_sir, all_sar = [], [], []
+
+    # Evaluation metrics with metadata tracking
+    results = {                                
+        'sdr': [],                             
+        'sir': [],                             
+        'sar': [],                             
+        'metadata': []                         
+    }
     
     # Process test set
     with torch.no_grad():
-        for noisy_wav, clean_wav in tqdm(test_loader, desc="Evaluating"):
+        for batch in tqdm(test_loader, desc="Evaluating"):
+
+            if len(batch) == 2:  # (audio, metadata) format  <-- ADDED (line ~18)
+                noisy_wav, clean_wav, *maybe_metadata = batch
+                batch_metadata = maybe_metadata[0] if maybe_metadata else None
+            else:                                               
+                noisy_wav, clean_wav = batch                    
+                batch_metadata = None
+
             noisy_wav = noisy_wav.to(device)
             clean_wav = clean_wav.to(device)
             
@@ -73,14 +89,21 @@ def evaluate(config_path, checkpoint_path):
             # Compute metrics for each sample in batch
             for i in range(clean_np.shape[0]):
                 sdr, sir, sar = compute_sdr_sir_sar(clean_np[i], est_np[i])
-                all_sdr.append(sdr)
-                all_sir.append(sir)
-                all_sar.append(sar)
+                results['sdr'].append(sdr)                     
+                results['sir'].append(sir)                     
+                results['sar'].append(sar)                     
+                if batch_metadata:                             
+                    results['metadata'].append(batch_metadata[i])
+
+    # Save full results with metadata
+    result_path = os.path.join(os.path.dirname(checkpoint_path), "evaluation_results.json")  
+    with open(result_path, 'w') as f:  
+        json.dump(results, f, indent=2) 
     
     # Compute average metrics
-    avg_sdr = np.mean(all_sdr)
-    avg_sir = np.mean(all_sir)
-    avg_sar = np.mean(all_sar)
+    avg_sdr = np.mean(results['sdr'])
+    avg_sir = np.mean(results['sir'])
+    avg_sar = np.mean(results['sar'])
     
     print(f"Evaluation Results:")
     print(f"SDR: {avg_sdr:.2f} dB")

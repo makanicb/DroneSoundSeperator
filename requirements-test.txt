@@ -1,0 +1,6 @@
+# Testing dependencies
+pytest==7.4.0
+pytest-cov==4.1.0
+pytest-benchmark==4.0.0
+librosa==0.10.0  # For audio analysis in tests
+torchaudio==2.0.2  # For additional audio utils

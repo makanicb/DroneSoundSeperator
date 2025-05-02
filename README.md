@@ -119,6 +119,7 @@ We use `pytest` for comprehensive unit testing. To run all tests:
 ```bash
 pip install -r requirements-test.txt
 pytest tests/ -v
+```
 
 ## Credits
 

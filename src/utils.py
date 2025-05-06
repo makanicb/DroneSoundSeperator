@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-def multi_channel_stft(wav, n_fft=1024, hop_length=512, win_length=1024):
+def stft(wav, n_fft=1024, hop_length=512, win_length=1024):
     """
     Compute Short-Time Fourier Transform for multi-channel audio.
     
@@ -40,7 +40,7 @@ def multi_channel_stft(wav, n_fft=1024, hop_length=512, win_length=1024):
     
     return stft_tensor
 
-def multi_channel_istft(stft_matrix, n_fft=1024, hop_length=512, win_length=1024, length=None):
+def istft(stft_matrix, n_fft=1024, hop_length=512, win_length=1024, length=None):
     """
     Compute Inverse Short-Time Fourier Transform for multi-channel audio.
     
@@ -76,7 +76,7 @@ def multi_channel_istft(stft_matrix, n_fft=1024, hop_length=512, win_length=1024
     
     return wav_tensor
 
-def multi_channel_si_sdr_loss(pred, target, eps=1e-8):
+def si_sdr_loss(pred, target, eps=1e-8):
     """
     Scale-Invariant Signal-to-Distortion Ratio (SI-SDR) Loss for multi-channel audio.
     
@@ -114,7 +114,7 @@ def multi_channel_si_sdr_loss(pred, target, eps=1e-8):
     
     return si_sdr_loss
 
-def compute_multi_channel_metrics(reference, estimation):
+def compute_sdr_sir_sar(reference, estimation):
     """
     Compute metrics for multi-channel source separation.
     
@@ -189,7 +189,7 @@ def compute_multi_channel_metrics(reference, estimation):
             'sar': 0.0
         }
 
-def save_multi_channel_audio(audio_tensor, output_path, sample_rate=16000):
+def save_audio(audio_tensor, output_path, sample_rate=16000):
     """
     Save multi-channel audio tensor to a file.
     

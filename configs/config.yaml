@@ -3,7 +3,7 @@
 # Data configuration
 data_dir: data/mixtures
 snr_levels: [-5, 0, 5, 10]   # SNRs used for mixing
-sample_rate: 16000	     # Target sample rate (inputs will be resampled)
+sample_rate: 16000           # Target sample rate (inputs will be resampled)
 train_test_split: 0.8        # Proportion of data used for training
 
 # Audio processing parameters

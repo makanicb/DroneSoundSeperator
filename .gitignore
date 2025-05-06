@@ -23,3 +23,9 @@ Thumbs.db
 
 # virtual environments
 venv
+
+# Python packaging
+*.egg-info/
+*.egg
+dist/
+build/

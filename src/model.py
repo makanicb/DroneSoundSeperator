@@ -78,28 +78,32 @@ class MultiChannelDecoder(nn.Module):
         self.decoder_blocks = nn.ModuleList()
         
         # Create upsampling and decoder blocks
-        for i in range(depth-1, -1, -1):
-            # Channels for each level
-            in_channels = base_channels * (2**i)
+        for i in range(depth):
+            # Calculate in_channels for upsampling block
+            if i == 0:
+                # Bottleneck output is base_channels * (2 ** depth)
+                in_channels = base_channels * (2 ** depth)
+            else:
+                # Previous decoder block's output is base_channels * (2 ** (depth - i))
+                in_channels = base_channels * (2 ** (depth - i))
             
-            if i < depth-1:  # Not the bottleneck level
-                in_channels *= 2  # Double for skip connection
-                
-            out_channels = base_channels * (2**max(0, i-1))
-            if i == 0:  # Last level
-                out_channels = base_channels
+            # Output channels after upsampling
+            out_channels = base_channels * (2 ** (depth - i - 1))
             
             # Upsampling block
             self.upsample_blocks.append(
-                nn.ConvTranspose2d(in_channels // 2 if i < depth-1 else in_channels,
-                                  out_channels, 
-                                  kernel_size=2, stride=2)
+                nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
             )
+            
+            # Skip feature channels from encoder
+            skip_feature_channels = base_channels * (2 ** (depth - i - 1))
+            # Decoder block's input is upsampled + skip feature
+            decoder_in = out_channels + skip_feature_channels
             
             # Decoder block
             self.decoder_blocks.append(
                 MultiChannelConvBlock(
-                    in_channels, 
+                    decoder_in,
                     out_channels,
                     dropout_rate=dropout_rate,
                     use_batch_norm=use_batch_norm
@@ -113,17 +117,18 @@ class MultiChannelDecoder(nn.Module):
             # Upsample
             x = self.upsample_blocks[i](x)
             
-            # Skip connection
-            skip_feature = features[self.depth - i - 1]
+            # Get corresponding skip feature from encoder
+            skip_idx = self.depth - i - 1
+            skip_feature = features[skip_idx]
             
-            # Handle cases where dimensions don't match exactly
+            # Adjust spatial dimensions if necessary
             if x.shape[2:] != skip_feature.shape[2:]:
                 x = F.interpolate(x, size=skip_feature.shape[2:], mode='bilinear', align_corners=False)
-                
-            # Concatenate for skip connection
+            
+            # Concatenate with skip feature
             x = torch.cat((x, skip_feature), dim=1)
             
-            # Decode
+            # Apply decoder block
             x = self.decoder_blocks[i](x)
             
         return x

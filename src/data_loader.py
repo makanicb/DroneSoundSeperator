@@ -28,6 +28,7 @@ class MultiChannelDroneDataset(Dataset):
         """
         self.data_dir = Path(data_dir)
         self.sample_rate = sample_rate
+        self.chunk_size_seconds = chunk_size_seconds
         self.chunk_size_samples = int(chunk_size_seconds * sample_rate)
         self.mode = mode
         

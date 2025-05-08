@@ -1,0 +1,51 @@
+{
+  "session_id": "20250508-TEST",
+  "recording_date": "2025-05-08T10:00:00.000Z",
+  "sample_rate": 16000,
+  "recording_setup": {
+    "microphone_array": "TEST_UMA-16V2",
+    "layout": "circular_15cm_diameter",
+    "adc_resolution": "24bit",
+    "gain_db": 32.0
+  },
+  "drone_info": {
+    "model": "TEST_DJI_Phantom4",
+    "distance_m": 8.0,
+    "propeller_rpm": 2400,
+    "fundamental_hz": 120
+  },
+  "audio_chunks_timestamps": [
+    {
+      "chunk_index": 0,
+      "start_time": 0.0,
+      "end_time": 3.0,
+      "description": "Synthetic drone audio with harmonics",
+      "specs": {
+        "harmonics": [360, 600],
+        "normalization": {
+          "peak_amplitude": 0.8,
+          "dynamic_range_db": 42.0
+        }
+      }
+    },
+    {
+      "chunk_index": 1,
+      "start_time": 3.0,
+      "end_time": 6.0,
+      "description": "Synthetic urban noise with impulses",
+      "specs": {
+        "noise_type": "urban_background",
+        "sources": ["wind", "traffic", "birds"],
+        "frequency_range_hz": [100, 7900],
+        "normalization": {
+          "peak_amplitude": 0.6,
+          "dynamic_range_db": 38.0
+        }
+      }
+    }
+  ],
+  "generation_parameters": {
+    "random_seed": 42,
+    "creation_date": "2025-05-06T12:07:01.229249"
+  }
+}

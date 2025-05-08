@@ -1,0 +1,58 @@
+# Configuration file for DroneSoundSeparator
+
+# Data configuration
+data_dir: tests/test_data
+snr_levels: [-5, 0, 5, 10]   # SNRs used for mixing
+sample_rate: 16000           # Target sample rate (inputs will be resampled)
+train_test_split: 0.8        # Proportion of data used for training
+
+# Audio processing parameters
+n_fft: 1024
+hop_length: 512
+win_length: 1024
+max_audio_length: 3.0        # Maximum segment length (longer inputs will be split)
+
+# Model parameters
+model:
+  in_channels: 1
+  base_channels: 32
+  dropout_rate: 0.2
+  use_batch_norm: true
+
+# Training parameters
+training:
+  batch_size: 16
+  epochs: 50
+  lr: 0.0003
+  lr_scheduler:
+    use: true
+    type: "cosine"           # "step", "cosine", "plateau"
+    step_size: 10
+    gamma: 0.5
+    patience: 5              # For plateau scheduler
+  optimizer: "adam"          # "adam", "adamw", "sgd"
+  weight_decay: 0.0001
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+
+# Validation parameters
+validation:
+  interval: 1                # Validate every N epochs
+  batch_size: 32
+
+# Checkpoint parameters
+checkpoints:
+  save_dir: experiments/run1
+  save_best_only: true       # Only save when validation metric improves
+  save_frequency: 5          # Save every N epochs (if save_best_only=false)
+
+# Hardware settings
+device: cuda                 # "cuda" or "cpu"
+num_workers: 4               # Number of workers for data loading
+
+# Logging parameters
+logging:
+  use_tensorboard: true
+  log_dir: experiments/run1/logs
+  image_freq: 100            # Log spectrograms every N steps

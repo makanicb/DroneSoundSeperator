@@ -5,7 +5,7 @@ from pathlib import Path
 
 @pytest.fixture
 def config():
-    config_path = Path("configs/config.yaml")
+    config_path = Path("tests/test_configs/config.yaml")
     with open(config_path) as f:
         return yaml.safe_load(f)
 

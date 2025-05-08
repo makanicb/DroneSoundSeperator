@@ -22,8 +22,8 @@ def test_npy_loading(tmp_path):
 def test_stft_roundtrip(test_audio):
     # Verify STFT reconstruction
     mono_audio = torch.from_numpy(test_audio[:, 0])
-    spec = stft(mono_audio.unsqueeze(0))
-    recon = istft(spec)
+    spec = stft(mono_audio.unsqueeze(0).unsqueeze(0))
+    recon = istft(spec, length=mono_audio.shape[0])
     assert torch.allclose(mono_audio, recon.squeeze(), atol=1e-3)
 
 def test_dataset_loading(config):

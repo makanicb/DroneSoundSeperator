@@ -17,4 +17,9 @@ def test_clipped_audio(config):
     assert np.max(np.abs(clipped)) > 1.0  # Verify test is valid
     dataset = MultiChannelDroneDataset(data_dir=config['data_dir'])
     processed, _ = dataset.process_audio(clipped)
+
+    # Convert to numpy if it's a tensor
+    if isinstance(processed, torch.Tensor):
+        processed = processed.numpy()
+
     assert np.max(np.abs(processed)) <= 1.0  # Should be normalized

@@ -120,8 +120,7 @@ class MultiChannelDroneDataset(Dataset):
             assert audio.shape[1] in [1, 16], f"Expected 1/16 channels (got {audio.shape[1]})"
         
             # Convert to tensor and normalize
-            audio_tensor = torch.from_numpy(audio).float()
-            audio_tensor = audio_tensor / (torch.max(torch.abs(audio_tensor)) + 1e-8)
+            audio_tensor, _ = self.process_audio(audio)
         
             # Handle length
             target_samples = int(self.sample_rate * self.chunk_size_seconds)
@@ -138,6 +137,38 @@ class MultiChannelDroneDataset(Dataset):
             logger.error(f"Error loading {chunk_path}: {str(e)}")
             # Return silent dummy audio
             return torch.zeros(16, int(self.sample_rate * self.chunk_size_seconds)), metadata
+
+    def process_audio(self, audio):
+        """
+        Process audio data: handle clipping, normalize, and prepare for model input.
+    
+        Args:
+            audio: numpy array of audio data with shape (samples, channels)
+    
+        Returns:
+            processed_audio: Tensor of shape (samples, channels) normalized to [-1.0, 1.0]
+            stats: Dictionary containing processing statistics (optional)
+        """
+        # Ensure numpy array
+        if isinstance(audio, torch.Tensor):
+            audio = audio.numpy()
+    
+        # Handle clipping
+        max_value = np.max(np.abs(audio))
+        was_clipped = max_value > 1.0
+    
+        # Convert to tensor and normalize
+        audio_tensor = torch.from_numpy(audio).float()
+        audio_tensor = audio_tensor / (torch.max(torch.abs(audio_tensor)) + 1e-8)
+    
+        # Optional: track processing stats
+        stats = {
+            'was_clipped': was_clipped,
+            'original_max': max_value,
+            'processed_max': torch.max(torch.abs(audio_tensor)).item()
+        }
+    
+        return audio_tensor, stats
 
 def load_and_preprocess_npy(file_path, target_sr=16000):
     """

@@ -2,6 +2,7 @@
 import torch
 import pytest
 from src.model import MultiChannelUNet
+from src.utils import si_sdr_loss
 
 @pytest.fixture
 def test_model():

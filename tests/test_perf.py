@@ -7,7 +7,7 @@ import pytest
 def test_gpu_speed(test_model):
     # Benchmark inference speed
     test_model = test_model.cuda()
-    dummy_input = torch.randn(16, 16, 256, 256).cuda()  # Batch of 16
+    dummy_input = torch.randn(16, 16, 1025, 256).cuda()  # Batch of 16
     
     # Warmup
     for _ in range(3):

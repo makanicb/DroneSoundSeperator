@@ -13,7 +13,7 @@ def test_silent_input(test_model):
 
 def test_clipped_audio(config):
     # Test clipping handling
-    clipped = np.random.uniform(-1.5, 1.5, (16000, 16)).astype(np.float32)
+    clipped = np.random.uniform(-1.5, 1.5, (config['sample_rate'], 16)).astype(np.float32)
     assert np.max(np.abs(clipped)) > 1.0  # Verify test is valid
     dataset = MultiChannelDroneDataset(data_dir=config['data_dir'])
     processed, _ = dataset.process_audio(clipped)

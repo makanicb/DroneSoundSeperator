@@ -3,13 +3,13 @@
 # Data configuration
 data_dir: tests/test_data
 snr_levels: [-5, 0, 5, 10]   # SNRs used for mixing
-sample_rate: 16000           # Target sample rate (inputs will be resampled)
+sample_rate: 44100           # Target sample rate
 train_test_split: 0.8        # Proportion of data used for training
 
 # Audio processing parameters
-n_fft: 1024
-hop_length: 512
-win_length: 1024
+n_fft: 2048
+hop_length: 441
+win_length: 2048
 max_audio_length: 3.0        # Maximum segment length (longer inputs will be split)
 
 # Model parameters

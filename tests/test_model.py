@@ -16,13 +16,13 @@ def test_mask_output(test_model):
 
 def test_model_shapes(test_model):
     # Verify input/output dimensions
-    spec = torch.randn(1, 16, 256, 256)  # Simulated spectrogram
+    spec = torch.randn(1, 16, 1025, 256)  # Simulated spectrogram
     out = test_model(spec)
     assert out.shape == spec.shape  # Same dims as input
 
 def test_sisdr_loss():
     # Test loss computation
-    target = torch.randn(1, 16000)
+    target = torch.randn(1, config['sampe_rate'])
     est = target + 0.1 * torch.randn_like(target)
     loss = si_sdr_loss(est, target)
     assert loss.item() < 0  # SI-SDR is negative when imperfect

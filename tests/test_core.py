@@ -8,15 +8,15 @@ from src.data_loader import MultiChannelDroneDataset
 
 @pytest.fixture
 def test_audio():
-    return np.random.randn(16000 * 3, 16).astype(np.float32)  # 3s @16kHz, 16ch
+    return np.random.randn(config['sample_rate'] * 3, 16).astype(np.float32)  # 3s @44.1kHz, 16ch
 
 def test_npy_loading(tmp_path):
     # Test .npy file I/O
     test_file = tmp_path / "test.npy"
-    audio = np.random.randn(16000, 16).astype(np.float32)
+    audio = np.random.randn(config['sampe_rate'], 16).astype(np.float32)
     np.save(test_file, audio)
     loaded = np.load(test_file)
-    assert loaded.shape == (16000, 16)
+    assert loaded.shape == (config['sample_rate'], 16)
     assert loaded.dtype == np.float32
 
 def test_stft_roundtrip(test_audio):

@@ -9,47 +9,58 @@ from tqdm import tqdm
 from datetime import datetime
 from pathlib import Path
 
-def mix_audio_npy(clean_path, noise_path, snr_db, sample_rate=44100):
-    """Mix mono drone audio with multichannel noise at target SNR. Returns mixed array."""
-    clean = np.load(clean_path)[:, 0]  # Ensure mono (S,) shape
-    noise = np.load(noise_path)        # (S, C)
+def mix_multichannel_audio(clean_path, noise_path, snr_db, sample_rate=44100):
+    """Mix 16-channel clean with 16-channel noise at target SNR (per-channel processing)."""
+    # Load both as 16-channel arrays
+    clean = np.load(clean_path)  # Shape: (samples, 16)
+    noise = np.load(noise_path)  # Shape: (samples, 16)
+    
+    # Validate channel count
+    if clean.shape[1] != 16 or noise.shape[1] != 16:
+        raise ValueError("Both clean and noise must be 16-channel (samples, 16)")
     
     # Match lengths
-    min_len = min(len(clean), noise.shape[0])
-    clean = clean[:min_len]
+    min_len = min(clean.shape[0], noise.shape[0])
+    clean = clean[:min_len, :]
     noise = noise[:min_len, :]
     
-    # SNR scaling per channel
-    clean_power = np.mean(clean**2)
+    # Calculate scaling factors per channel
     scaled_noise = np.zeros_like(noise)
-    for c in range(noise.shape[1]):
+    for c in range(16):
+        clean_power = np.mean(clean[:, c]**2)
         noise_power = np.mean(noise[:, c]**2)
-        k = np.sqrt(clean_power / (10 ** (snr_db / 10) * noise_power))
+        
+        # Handle zero-power cases
+        if noise_power == 0:
+            k = 0
+        else:
+            k = np.sqrt(clean_power / (10 ** (snr_db / 10) * noise_power))
+        
         scaled_noise[:, c] = noise[:, c] * k
     
     # Mix and normalize
-    mixed = clean.reshape(-1, 1) + scaled_noise  # Broadcast to multichannel
+    mixed = clean + scaled_noise
     mixed = mixed / (np.max(np.abs(mixed)) + 1e-8) * 0.9  # Peak at -1dBFS
     
     return mixed.astype(np.float32)
 
 def create_dataset(config_path):
-    """Create dataset organized into session folders compatible with data_loader.py."""
+    """Create dataset with 16-channel clean/noise inputs and session folders."""
     with open(config_path) as f:
         config = yaml.safe_load(f)
     
     data_dir = Path(config['data_dir'])
     sample_rate = config.get('sample_rate', 44100)
     
-    # Load clean and noise files
-    clean_dir = data_dir / 'clean_drone'
-    noise_dir = data_dir / 'noise'
+    # Input directories (both expected to contain 16-channel .npy files)
+    clean_dir = data_dir / 'clean_drone_16ch'
+    noise_dir = data_dir / 'noise_16ch'
     
     clean_files = list(clean_dir.glob('*.npy'))
     noise_files = list(noise_dir.glob('*.npy'))
     
     if not clean_files or not noise_files:
-        raise FileNotFoundError("Missing clean/noise .npy files.")
+        raise FileNotFoundError("Missing 16-channel .npy files in clean/noise directories")
     
     session_counter = 0
     global_meta = []
@@ -70,22 +81,18 @@ def create_dataset(config_path):
             chunk_path = audio_chunks_dir / 'chunk_0.npy'
             
             try:
-                mixed = mix_audio_npy(clean_path, noise_path, snr, sample_rate)
+                mixed = mix_multichannel_audio(clean_path, noise_path, snr, sample_rate)
                 np.save(chunk_path, mixed)
             except Exception as e:
-                print(f"Error processing {clean_path.name}: {e}")
+                print(f"Skipped {clean_path.name}: {str(e)}")
                 continue
             
-            # Calculate duration
+            # Metadata generation
             duration = mixed.shape[0] / sample_rate
-            
-            # Generate per-session metadata
             metadata = {
                 "session_id": session_id,
-                "clean_source": str(clean_path),
-                "noise_source": str(noise_path),
+                "channels": 16,
                 "snr_db": snr,
-                "sample_rate": sample_rate,
                 "audio_chunks_timestamps": [{
                     "chunk_index": 0,
                     "start_time": 0.0,
@@ -94,23 +101,23 @@ def create_dataset(config_path):
                 }]
             }
             
-            # Save session metadata
             with open(session_dir / 'metadata.json', 'w') as f:
                 json.dump(metadata, f, indent=2)
             
             global_meta.append({
                 "session_id": session_id,
-                "mixture_path": str(chunk_path)
+                "clean": str(clean_path),
+                "noise": str(noise_path)
             })
     
-    # Save global metadata (optional)
+    # Save global metadata
     with open(data_dir / 'dataset_overview.json', 'w') as f:
         json.dump(global_meta, f, indent=2)
     
-    print(f"Generated {session_counter} sessions in {data_dir}")
+    print(f"Created {session_counter} sessions with 16-channel mixtures")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create dataset organized into session folders.")
-    parser.add_argument('--config', default='config.yaml', help="Path to config file")
+    parser = argparse.ArgumentParser(description="Create 16-channel drone dataset")
+    parser.add_argument('--config', required=True, help="Path to config.yaml")
     args = parser.parse_args()
     create_dataset(args.config)

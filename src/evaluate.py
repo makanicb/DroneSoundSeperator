@@ -70,7 +70,7 @@ def evaluate(config_path, checkpoint_path):
             )
             
             # Predict mask
-            mask = model(torch.abs(X).unsqueeze(1))
+            mask = model(torch.abs(X))
             
             # Apply mask and reconstruct
             est_mag = mask * torch.abs(X)

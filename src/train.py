@@ -150,7 +150,7 @@ def train(config_path):
             )
             
             # Model expects magnitude spectrograms with channel dimension
-            X_mag = torch.abs(X).unsqueeze(1)
+            X_mag = torch.abs(X)
             
             # Predict mask
             mask = model(X_mag)
@@ -212,7 +212,7 @@ def train(config_path):
                     )
                     
                     # Model expects magnitude spectrograms with channel dimension
-                    X_mag = torch.abs(X).unsqueeze(1)
+                    X_mag = torch.abs(X)
                     
                     # Predict mask
                     mask = model(X_mag)
@@ -280,7 +280,7 @@ def train(config_path):
                     
                     # Process through model
                     X = stft(noisy_sample, n_fft=config['n_fft'], hop_length=config['hop_length'], win_length=config['win_length'])
-                    X_mag = torch.abs(X).unsqueeze(1)
+                    X_mag = torch.abs(X)
                     mask = model(X_mag)
                     est_mag = mask * X_mag.squeeze(1)
                     est_spec = est_mag * torch.exp(1j * torch.angle(X))

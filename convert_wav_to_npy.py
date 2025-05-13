@@ -5,6 +5,7 @@ import soundfile as sf
 from pathlib import Path
 from tqdm import tqdm
 import logging
+import argparse
 
 def process_audio(input_path, output_dir, max_duration=3.0):
     """Process individual audio file with error handling"""
@@ -36,6 +37,18 @@ def process_audio(input_path, output_dir, max_duration=3.0):
     except Exception as e:
         logging.error(f"Failed {input_path}: {str(e)}")
 
+def convert_to_16ch(wav_array):
+    """Channel conversion logic"""
+    num_channels = wav_array.shape[1]
+    if num_channels == 1:
+        return np.repeat(wav_array, 16, axis=1)
+    elif 2 <= num_channels < 16:
+        repeats = 16 // num_channels
+        remainder = 16 % num_channels
+        return np.hstack([wav_array] * repeats + [wav_array[:, :remainder]])
+    else:
+        return wav_array[:, :16]
+
 def convert_dataset(src_root, dest_root):
     """Main conversion function"""
     Path(dest_root).mkdir(parents=True, exist_ok=True)
@@ -56,7 +69,15 @@ def convert_dataset(src_root, dest_root):
             process_audio(wav_file, output_dir)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Convert WAV files to 16-channel NPY format')
+    parser.add_argument('--src-root', type=str, required=True,
+                        help='Path to root directory containing yes_drone/unknown folders')
+    parser.add_argument('--dest-root', type=str, default='data',
+                        help='Output root directory (default: data)')
+    
+    args = parser.parse_args()
+    
     convert_dataset(
-        src_root="../DroneAudioDataset/Binary_Drone_Audio",
-        dest_root="data"
+        src_root=args.src_root,
+        dest_root=args.dest_root
     )

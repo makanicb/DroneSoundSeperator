@@ -6,3 +6,5 @@ pyyaml
 mir_eval
 tensorboard
 torchaudio
+soundfile>=0.12.1  
+tqdm>=4.66.0       

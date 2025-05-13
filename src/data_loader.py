@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class MultiChannelDroneDataset(Dataset):
     """Dataset for multi-channel drone audio processing."""
     
-    def __init__(self, data_dir, sample_rate=16000, chunk_size_seconds=3.0, mode='train', split=0.8):
+    def __init__(self, data_dir, sample_rate=44100, chunk_size_seconds=3.0, mode='train', split=0.8):
         """
         Initialize the multi-channel drone dataset.
         
@@ -170,7 +170,7 @@ class MultiChannelDroneDataset(Dataset):
     
         return audio_tensor, stats
 
-def load_and_preprocess_npy(file_path, target_sr=16000):
+def load_and_preprocess_npy(file_path, target_sr=44100):
     """
     Load a .npy file containing multi-channel audio data.
     

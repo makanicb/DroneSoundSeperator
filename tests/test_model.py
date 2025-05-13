@@ -20,9 +20,9 @@ def test_model_shapes(test_model):
     out = test_model(spec)
     assert out.shape == spec.shape  # Same dims as input
 
-def test_sisdr_loss():
+def test_sisdr_loss(config):
     # Test loss computation
-    target = torch.randn(1, config['sampe_rate'])
+    target = torch.randn(1, config['sample_rate'])
     est = target + 0.1 * torch.randn_like(target)
     loss = si_sdr_loss(est, target)
     assert loss.item() < 0  # SI-SDR is negative when imperfect

@@ -7,13 +7,13 @@ from src.utils import stft, istft, si_sdr_loss
 from src.data_loader import MultiChannelDroneDataset
 
 @pytest.fixture
-def test_audio():
+def test_audio(config):
     return np.random.randn(config['sample_rate'] * 3, 16).astype(np.float32)  # 3s @44.1kHz, 16ch
 
-def test_npy_loading(tmp_path):
+def test_npy_loading(tmp_path, config):
     # Test .npy file I/O
     test_file = tmp_path / "test.npy"
-    audio = np.random.randn(config['sampe_rate'], 16).astype(np.float32)
+    audio = np.random.randn(config['sample_rate'], 16).astype(np.float32)
     np.save(test_file, audio)
     loaded = np.load(test_file)
     assert loaded.shape == (config['sample_rate'], 16)

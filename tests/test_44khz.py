@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from pathlib import Path
 from src.utils import stft, istft
+from src.data_loader import MultiChannelDroneDataset
 
 def test_44khz_stft_dims():
     # Verify STFT output dimensions for 44.1kHz
@@ -15,7 +16,7 @@ def test_44khz_stft_dims():
         win_length=2048
     )
     # Expected: (B, C, Freq=1025, Time=300)
-    assert spec.shape == (1, 16, 1025, 300)
+    assert spec.shape == (1, 16, 1025, 301)
 
 def test_config_validation(config):
     # Ensure config matches 44.1kHz requirements

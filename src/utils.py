@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-def stft(wav, n_fft=1024, hop_length=512, win_length=1024):
+def stft(wav, n_fft=2048, hop_length=441, win_length=2048):
     """
     Compute Short-Time Fourier Transform for multi-channel audio.
     
@@ -40,7 +40,7 @@ def stft(wav, n_fft=1024, hop_length=512, win_length=1024):
     
     return stft_tensor
 
-def istft(stft_matrix, n_fft=1024, hop_length=512, win_length=1024, length=None):
+def istft(stft_matrix, n_fft=2048, hop_length=441, win_length=2048, length=None):
     """
     Compute Inverse Short-Time Fourier Transform for multi-channel audio.
     

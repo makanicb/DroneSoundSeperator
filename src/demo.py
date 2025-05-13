@@ -11,7 +11,7 @@ from tqdm import tqdm
 from model import UNetSeparator
 from utils import stft, istft
 
-def load_audio(input_path, target_sr=16000):
+def load_audio(input_path, target_sr=44100):
     """Load .npy or .wav with automatic resampling"""
     if input_path.endswith('.npy'):
         audio = np.load(input_path)

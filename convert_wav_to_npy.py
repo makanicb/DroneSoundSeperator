@@ -72,9 +72,6 @@ def convert_dataset(src_root, dest_root):
     Path(dest_root).mkdir(parents=True, exist_ok=True)
     logging.basicConfig(filename='conversion_errors.log', level=logging.ERROR)
     
-    # Disable librosa caching to save memory
-    librosa.set_cache_enabled(False)
-    
     categories = {
         "yes_drone": "clean_drone_16ch",
         "unknown": "noise_16ch"

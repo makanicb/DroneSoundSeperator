@@ -40,8 +40,8 @@ def create_dataset(config_path):
         config = yaml.safe_load(f)
     
     data_dir = Path(config['data_dir'])
-    clean_dir = data_dir / 'clean_drone_16ch'
-    noise_dir = data_dir / 'noise_16ch'
+    clean_dir = Path(config['clean_dir'])
+    noise_dir = Path(config['noise_dir'])
     
     clean_files = list(clean_dir.glob('*.npy'))
     noise_files = list(noise_dir.glob('*.npy'))
@@ -60,6 +60,8 @@ def create_dataset(config_path):
         # Process all SNR levels for this clean file
         for snr in config['snr_levels']:
             noise_path = random.choice(noise_files)
+            noise = None
+            mixed = None
             
             try:
                 noise = np.load(noise_path)

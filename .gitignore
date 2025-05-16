@@ -32,3 +32,10 @@ build/
 
 # Numpy object files
 *.npy
+
+# Generated Audio Samples
+20*/
+dataset_overview.json
+
+# Conversion logs
+conversion_errors.log

@@ -1,5 +1,6 @@
 # src/evaluate.py
 import os
+import json
 import torch
 import yaml
 import numpy as np
@@ -10,117 +11,137 @@ from data_loader import DroneMixtureDataset
 from model import UNetSeparator
 from utils import stft, istft, compute_sdr_sir_sar
 
-def evaluate(config_path, checkpoint_path):
+def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     # Load config
-    with open(config_path, 'r') as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
     
-    # Setup device
+    # Device setup
     device = torch.device(config['device'] if torch.cuda.is_available() else 'cpu')
+    print(f"Evaluation device: {device}")
     
-    # Create test dataset and loader
-    test_dataset = DroneMixtureDataset(
+    # Model setup
+    model = UNetSeparator().to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device)['model_state_dict'])
+    model.eval()
+    
+    # Evaluation parameters
+    batch_size = batch_size or config['evaluation'].get('batch_size', 8)
+    use_amp = config['evaluation'].get('use_amp', True)
+    
+    # Data loader
+    test_set = DroneMixtureDataset(
         data_dir=config['data_dir'],
         snr_levels=config['snr_levels'],
         sample_rate=config['sample_rate'],
-        mode='test'  # Assuming you add a mode parameter to the dataset class
+        mode='test'
     )
+    
     test_loader = DataLoader(
-        test_dataset, 
-        batch_size=config['batch_size'],
-        shuffle=False
+        test_set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=config['num_workers'],
+        pin_memory=True
     )
     
-    # Initialize model and load checkpoint
-    model = UNetSeparator().to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    model.eval()
-    
-    # Evaluation metrics
-    all_sdr, all_sir, all_sar = [], [], []
-
-    # Evaluation metrics with metadata tracking
-    results = {                                
-        'sdr': [],                             
-        'sir': [],                             
-        'sar': [],                             
-        'metadata': []                         
+    # Results storage
+    results = {
+        'sdr': [], 'sir': [], 'sar': [],
+        'metadata': [],
+        'config': {
+            'batch_size': batch_size,
+            'use_amp': use_amp,
+            'checkpoint': checkpoint_path
+        }
     }
     
-    # Process test set
-    with torch.no_grad():
+    # Evaluation loop
+    with torch.inference_mode():
         for batch in tqdm(test_loader, desc="Evaluating"):
+            try:
+                batch_results = process_batch(batch, model, device, config, use_amp)
+                results['sdr'].extend(batch_results['sdr'])
+                results['sir'].extend(batch_results['sir'])
+                results['sar'].extend(batch_results['sar'])
+                results['metadata'].extend(batch_results['metadata'])
+            except RuntimeError as e:  # Handle OOM
+                if 'CUDA out of memory' in str(e):
+                    print(f"OOM detected, processing batch in smaller chunks")
+                    process_batch_chunked(batch, model, device, config, results, use_amp)
+                else:
+                    raise e
+                    
+            torch.cuda.empty_cache()
+    
+    # Save results
+    output_dir = output_dir or os.path.dirname(checkpoint_path)
+    os.makedirs(output_dir, exist_ok=True)
+    result_path = os.path.join(output_dir, "evaluation_results.json")
+    
+    with open(result_path, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    # Print summary
+    print(f"\nEvaluation completed")
+    print(f"Average SDR: {np.mean(results['sdr']):.2f} dB")
+    print(f"Average SIR: {np.mean(results['sir']):.2f} dB")
+    print(f"Average SAR: {np.mean(results['sar']):.2f} dB")
+    print(f"Full results saved to {result_path}")
+    
+    return results
 
-            if len(batch) == 2:  # (audio, metadata) format  <-- ADDED (line ~18)
-                noisy_wav, clean_wav, *maybe_metadata = batch
-                batch_metadata = maybe_metadata[0] if maybe_metadata else None
-            else:                                               
-                noisy_wav, clean_wav = batch                    
-                batch_metadata = None
-
-            noisy_wav = noisy_wav.to(device)
-            clean_wav = clean_wav.to(device)
-            
-            # STFT of noisy input
-            X = stft(
-                noisy_wav, 
+def process_batch(batch, model, device, config, use_amp):
+    noisy, clean, *metadata = batch
+    metadata = metadata[0] if metadata else [None]*len(noisy)
+    
+    noisy = noisy.to(device, non_blocking=True)
+    clean = clean.to(device, non_blocking=True)
+    
+    with torch.cuda.amp.autocast(enabled=use_amp):
+        X = stft(noisy, 
                 n_fft=config['n_fft'],
                 hop_length=config['hop_length'],
-                win_length=config['win_length']
-            )
-            
-            # Predict mask
-            mask = model(torch.abs(X))
-            
-            # Apply mask and reconstruct
-            est_mag = mask * torch.abs(X)
-            est_spec = est_mag * torch.exp(1j * torch.angle(X))
-            est_wav = istft(
-                est_spec,
-                n_fft=config['n_fft'],
-                hop_length=config['hop_length'],
-                win_length=config['win_length']
-            )
-            
-            # Move to CPU for evaluation
-            clean_np = clean_wav.cpu().numpy()
-            est_np = est_wav.cpu().numpy()
-            
-            # Compute metrics for each sample in batch
-            for i in range(clean_np.shape[0]):
-                sdr, sir, sar = compute_sdr_sir_sar(clean_np[i], est_np[i])
-                results['sdr'].append(sdr)                     
-                results['sir'].append(sir)                     
-                results['sar'].append(sar)                     
-                if batch_metadata:                             
-                    results['metadata'].append(batch_metadata[i])
+                win_length=config['win_length'])
+        mask = model(torch.abs(X))
+        est_wav = reconstruct_audio(X, mask, config)
+        
+    return calculate_metrics(clean, est_wav, metadata)
 
-    # Save full results with metadata
-    result_path = os.path.join(os.path.dirname(checkpoint_path), "evaluation_results.json")  
-    with open(result_path, 'w') as f:  
-        json.dump(results, f, indent=2) 
+def process_batch_chunked(batch, model, device, config, results, use_amp):
+    chunk_size = max(1, batch[0].shape[0] // 2)
+    for i in range(0, batch[0].shape[0], chunk_size):
+        chunk = [t[i:i+chunk_size] for t in batch]
+        chunk_results = process_batch(chunk, model, device, config, use_amp)
+        results['sdr'].extend(chunk_results['sdr'])
+        results['sir'].extend(chunk_results['sir'])
+        results['sar'].extend(chunk_results['sar'])
+        results['metadata'].extend(chunk_results['metadata'])
+
+def calculate_metrics(clean, est_wav, metadata):
+    clean_np = clean.cpu().numpy()
+    est_np = est_wav.float().cpu().numpy()
     
-    # Compute average metrics
-    avg_sdr = np.mean(results['sdr'])
-    avg_sir = np.mean(results['sir'])
-    avg_sar = np.mean(results['sar'])
-    
-    print(f"Evaluation Results:")
-    print(f"SDR: {avg_sdr:.2f} dB")
-    print(f"SIR: {avg_sir:.2f} dB")
-    print(f"SAR: {avg_sar:.2f} dB")
-    
-    return {
-        'sdr': avg_sdr,
-        'sir': avg_sir,
-        'sar': avg_sar
-    }
+    metrics = {'sdr': [], 'sir': [], 'sar': [], 'metadata': []}
+    for i in range(clean_np.shape[0]):
+        try:
+            sdr, sir, sar = compute_sdr_sir_sar(clean_np[i], est_np[i])
+            metrics['sdr'].append(sdr)
+            metrics['sir'].append(sir)
+            metrics['sar'].append(sar)
+            metrics['metadata'].append(metadata[i] if metadata else None)
+        except Exception as e:
+            print(f"Error calculating metrics: {e}")
+            
+    return metrics
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='configs/config.yaml')
-    parser.add_argument('--checkpoint', type=str, required=True)
+    parser.add_argument('--config', required=True, help='Config file path')
+    parser.add_argument('--checkpoint', required=True, help='Model checkpoint path')
+    parser.add_argument('--output-dir', help='Output directory for results')
+    parser.add_argument('--batch-size', type=int, help='Override batch size')
     args = parser.parse_args()
     
-    evaluate(args.config, args.checkpoint)
+    evaluate(args.config, args.checkpoint, args.output_dir, args.batch_size)

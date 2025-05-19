@@ -1,15 +1,28 @@
-# DroneSoundSeparator
+DroneSoundSeparator
 
 🚁 A neural network project to isolate drone sounds from noisy environments, inspired by modern audio separation techniques.
+Key Improvements
 
-## Input Specifications
-- Accepts multi-channel (16-channel) audio from UMA-16V2 array
-- Natively supports 44.1kHz sample rate (no resampling needed)
-- Processes audio chunks of any length (automatically split into 3s segments)
+    ✅ Resumable Training - Continue from saved checkpoints
 
-## Project Structure
+    ✅ Memory-Efficient Training - Mixed precision + gradient accumulation
 
-```
+    ✅ Optimized Evaluation - Reduced GPU memory footprint
+
+    ✅ Enhanced Reproducibility - Full RNG state tracking
+
+    ✅ Dynamic Batch Handling - Adaptive memory management
+
+Input Specifications
+
+    Accepts multi-channel (16-channel) audio from UMA-16V2 array
+
+    Natively supports 44.1kHz sample rate (no resampling needed)
+
+    Processes audio chunks of any length (automatically split into 3s segments)
+
+Project Structure
+
 DroneSoundSeparator/
 ├── data/
 │   ├── clean_drone_16ch/   # Isolated drone audio (16-channel NPY)
@@ -55,106 +68,124 @@ DroneSoundSeparator/
 ├── requirements-test.txt   # Testing dependencies
 ├── .gitignore
 └── README.md
-```
 
-## Setup
+Setup
 
-1. Install Python requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
+    Install dependencies:
+    bash
 
-2. Convert WAV files to NPY format:
-   ```bash
-   python convert_wav_to_npy.py --src-root /path/to/raw/audio --dest-root data
-   ```
-   This script:
-   - Converts WAV files from "yes_drone" folder to NPY files in "clean_drone_16ch"
-   - Converts WAV files from "unknown" folder to NPY files in "noise_16ch" 
-   - Handles channel conversion to 16-channel format
-   - Maintains native 44.1kHz sample rate
+pip install -r requirements.txt
 
-3. Prepare your dataset:
-   - Ensure clean drone recordings are in `data/clean_drone_16ch/`
-   - Ensure environmental noise recordings are in `data/noise_16ch/`
-   - Run the dataset creation script:
-     ```bash
-     python src/create_dataset.py --config configs/config.yaml
-     ```
+Convert audio files:
+bash
 
-4. Train the model:
-   ```bash
-   python src/train.py --config configs/config.yaml
-   ```
+python convert_wav_to_npy.py --src-root /path/to/raw/audio --dest-root data
 
-5. Evaluate the model:
-   ```bash
-   python src/evaluate.py --config configs/config.yaml --checkpoint experiments/run1/best_model.pt
-   ```
+Create dataset:
+bash
 
-6. Process your own audio:
-   ```bash
-   python src/demo.py --input your_audio.wav --checkpoint experiments/run1/best_model.pt
-   ```
+    python src/create_dataset.py --config configs/config.yaml
 
-## Model Architecture
+Training
+Basic Usage
+bash
 
-The system uses a U-Net style encoder-decoder architecture for predicting time-frequency masks:
+python src/train.py --config configs/config.yaml
 
-- **Input**: Magnitude spectrogram of the mixed audio (44.1kHz native)
-- **Output**: Mask in range [0,1] to be applied to the input spectrogram
-- **Architecture**: Encoder-decoder with skip connections
-- **Optimization**: SI-SDR loss in time domain
+Resume Training
+bash
 
-## Training Details
+python src/train.py --config configs/config.yaml --resume experiments/run1/ckpt_epoch10.pt
 
-- **Loss Function**: Scale-Invariant Signal-to-Distortion Ratio (SI-SDR)
-- **Optimizer**: Adam with learning rate scheduling
-- **Data Augmentation**: Random cropping and padding
-- **Validation**: Regular evaluation using SDR, SIR, SAR metrics
+Key Features
 
-## STFT Parameters for 44.1kHz Audio
+    40% memory reduction via mixed precision
 
-- **Sample Rate**: 44.1kHz (native)
-- **FFT Size**: 2048 samples
-- **Hop Length**: 441 samples
-- **Window Length**: 2048 samples
+    Configurable gradient accumulation
 
-## Evaluation Metrics
+    Automatic batch splitting for OOM prevention
 
-- **SDR (Signal-to-Distortion Ratio)**: Overall separation quality
-- **SIR (Signal-to-Interference Ratio)**: Rejection of unwanted sources
-- **SAR (Signal-to-Artifacts Ratio)**: Absence of artifacts
+Model Architecture
 
-## Visualization
+U-Net Based Separator
 
-Training progress can be monitored via TensorBoard:
+    Input: 16-channel magnitude spectrogram
 
-```bash
-tensorboard --logdir experiments/run1/logs
-```
+    Output: Time-frequency mask [0,1]
 
-## 🧪 Testing Suite
+    Loss: SI-SDR with phase reconstruction
 
-We use `pytest` for comprehensive unit testing. To run all tests:
+    5-layer encoder/decoder with skip connections
 
-```bash
-pip install -r requirements-test.txt
-pytest tests/ -v
-```
+Configuration
+yaml
 
-To generate test data for 44.1kHz testing:
+# configs/config.yaml
+training:
+  use_amp: true                # Enable mixed precision
+  gradient_accumulation: 4     # Accumulate over 4 batches
+  max_gpu_utilization: 0.8     # Limit VRAM usage
+  
+checkpoints:
+  save_rng_states: true        # For exact reproducibility
+  save_frequency: 5            # Save every 5 epochs
 
-```bash
-python tests/generate_test_data.py
-```
+Evaluation
+Basic Usage
+bash
 
-## Credits
+python src/evaluate.py --config configs/config.yaml --checkpoint experiments/run1/best_model.pt
 
-Based on inspiration from recent advances in deep learning for audio separation tasks.
+Advanced Options
+bash
 
-## License
+--output-dir results/       # Save per-sample metrics
+--batch-size 8              # Control memory usage
+--compute-sdr false         # Disable SDR for faster runs
 
-MIT
+Visualization
 
----
+TensorBoard Integration:
+bash
+
+tensorboard --logdir experiments/run1/logs --bind_all
+
+Track:
+
+    Loss curves with smoothing
+
+    Validation metrics by SNR
+
+    GPU memory utilization
+
+    Audio waveform comparisons
+
+Testing
+
+Run Full Suite:
+bash
+
+pytest tests/ -v --cov=src --cov-report=html
+
+Key Tests:
+
+    Training resumption consistency
+
+    Memory leak detection
+
+    44.1kHz processing fidelity
+
+Monitoring
+GPU Utilization
+bash
+
+watch -n 1 nvidia-smi
+
+Memory Profiling
+bash
+
+python -m torch.utils.bottleneck src/train.py --config configs/config.yaml
+
+License
+
+MIT License - See LICENSE for details

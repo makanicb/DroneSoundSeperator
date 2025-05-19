@@ -1,28 +1,24 @@
-DroneSoundSeparator
+# DroneSoundSeparator
 
 🚁 A neural network project to isolate drone sounds from noisy environments, inspired by modern audio separation techniques.
-Key Improvements
 
-    ✅ Resumable Training - Continue from saved checkpoints
+## Key Improvements
 
-    ✅ Memory-Efficient Training - Mixed precision + gradient accumulation
+- ✅ **Resumable Training** - Continue from saved checkpoints
+- ✅ **Memory-Efficient Training** - Mixed precision + gradient accumulation
+- ✅ **Optimized Evaluation** - Reduced GPU memory footprint
+- ✅ **Enhanced Reproducibility** - Full RNG state tracking
+- ✅ **Dynamic Batch Handling** - Adaptive memory management
 
-    ✅ Optimized Evaluation - Reduced GPU memory footprint
+## Input Specifications
 
-    ✅ Enhanced Reproducibility - Full RNG state tracking
+- Accepts multi-channel (16-channel) audio from UMA-16V2 array
+- Natively supports 44.1kHz sample rate (no resampling needed)
+- Processes audio chunks of any length (automatically split into 3s segments)
 
-    ✅ Dynamic Batch Handling - Adaptive memory management
+## Project Structure
 
-Input Specifications
-
-    Accepts multi-channel (16-channel) audio from UMA-16V2 array
-
-    Natively supports 44.1kHz sample rate (no resampling needed)
-
-    Processes audio chunks of any length (automatically split into 3s segments)
-
-Project Structure
-
+```
 DroneSoundSeparator/
 ├── data/
 │   ├── clean_drone_16ch/   # Isolated drone audio (16-channel NPY)
@@ -68,58 +64,52 @@ DroneSoundSeparator/
 ├── requirements-test.txt   # Testing dependencies
 ├── .gitignore
 └── README.md
+```
 
-Setup
+## Setup
 
-    Install dependencies:
-    bash
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-pip install -r requirements.txt
+2. **Convert audio files:**
+   ```bash
+   python convert_wav_to_npy.py --src-root /path/to/raw/audio --dest-root data
+   ```
 
-Convert audio files:
-bash
+3. **Create dataset:**
+   ```bash
+   python src/create_dataset.py --config configs/config.yaml
+   ```
 
-python convert_wav_to_npy.py --src-root /path/to/raw/audio --dest-root data
+## Training
 
-Create dataset:
-bash
-
-    python src/create_dataset.py --config configs/config.yaml
-
-Training
-Basic Usage
-bash
-
+### Basic Usage
+```bash
 python src/train.py --config configs/config.yaml
+```
 
-Resume Training
-bash
-
+### Resume Training
+```bash
 python src/train.py --config configs/config.yaml --resume experiments/run1/ckpt_epoch10.pt
+```
 
-Key Features
+### Key Features
+- 40% memory reduction via mixed precision
+- Configurable gradient accumulation
+- Automatic batch splitting for OOM prevention
 
-    40% memory reduction via mixed precision
+## Model Architecture
 
-    Configurable gradient accumulation
+### U-Net Based Separator
+- **Input:** 16-channel magnitude spectrogram
+- **Output:** Time-frequency mask [0,1]
+- **Loss:** SI-SDR with phase reconstruction
+- **Structure:** 5-layer encoder/decoder with skip connections
 
-    Automatic batch splitting for OOM prevention
-
-Model Architecture
-
-U-Net Based Separator
-
-    Input: 16-channel magnitude spectrogram
-
-    Output: Time-frequency mask [0,1]
-
-    Loss: SI-SDR with phase reconstruction
-
-    5-layer encoder/decoder with skip connections
-
-Configuration
-yaml
-
+## Configuration
+```yaml
 # configs/config.yaml
 training:
   use_amp: true                # Enable mixed precision
@@ -129,63 +119,59 @@ training:
 checkpoints:
   save_rng_states: true        # For exact reproducibility
   save_frequency: 5            # Save every 5 epochs
+```
 
-Evaluation
-Basic Usage
-bash
+## Evaluation
 
+### Basic Usage
+```bash
 python src/evaluate.py --config configs/config.yaml --checkpoint experiments/run1/best_model.pt
+```
 
-Advanced Options
-bash
-
+### Advanced Options
+```bash
 --output-dir results/       # Save per-sample metrics
 --batch-size 8              # Control memory usage
 --compute-sdr false         # Disable SDR for faster runs
+```
 
-Visualization
+## Visualization
 
-TensorBoard Integration:
-bash
-
+### TensorBoard Integration:
+```bash
 tensorboard --logdir experiments/run1/logs --bind_all
+```
 
-Track:
+**Track:**
+- Loss curves with smoothing
+- Validation metrics by SNR
+- GPU memory utilization
+- Audio waveform comparisons
 
-    Loss curves with smoothing
+## Testing
 
-    Validation metrics by SNR
-
-    GPU memory utilization
-
-    Audio waveform comparisons
-
-Testing
-
-Run Full Suite:
-bash
-
+### Run Full Suite:
+```bash
 pytest tests/ -v --cov=src --cov-report=html
+```
 
-Key Tests:
+### Key Tests:
+- Training resumption consistency
+- Memory leak detection
+- 44.1kHz processing fidelity
 
-    Training resumption consistency
+## Monitoring
 
-    Memory leak detection
-
-    44.1kHz processing fidelity
-
-Monitoring
-GPU Utilization
-bash
-
+### GPU Utilization
+```bash
 watch -n 1 nvidia-smi
+```
 
-Memory Profiling
-bash
-
+### Memory Profiling
+```bash
 python -m torch.utils.bottleneck src/train.py --config configs/config.yaml
+```
 
-License
+## License
 
 MIT License - See LICENSE for details

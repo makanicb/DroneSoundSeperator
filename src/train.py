@@ -12,7 +12,7 @@ from tqdm import tqdm
 import time
 from datetime import datetime
 
-from data_loader import DroneMixtureDataset
+from data_loader import MultiChannelDroneDataset
 from model import UNetSeparator
 from utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar
 
@@ -87,6 +87,33 @@ def train(config_path, resume_checkpoint=None):
     # Final cleanup
     save_final_model(config, model, optimizer, epoch)
     if writer: writer.close()
+
+def create_data_loaders(config, device):
+    train_dataset = MultiChannelDroneDataset(
+        mixtures_dir=config["data"]["mixtures_dir"],
+        clean_dir=config["data"]["clean_dir"],
+        noise_dir=config["data"]["noise_dir"],
+        dataset_overview_path=config["data"]["dataset_overview"],
+        sample_rate=config["data"]["sample_rate"],
+        chunk_size_seconds=config["data"]["max_audio_length"],
+        mode="train",
+        split=config["data"]["train_test_split"],
+    )
+
+    val_dataset = MultiChannelDroneDataset(
+        mixtures_dir=config["data"]["mixtures_dir"],
+        clean_dir=config["data"]["clean_dir"],
+        noise_dir=config["data"]["noise_dir"],
+        dataset_overview_path=config["data"]["dataset_overview"],
+        sample_rate=config["data"]["sample_rate"],
+        chunk_size_seconds=config["data"]["max_audio_length"],
+        mode="test",
+        split=config["data"]["train_test_split"],
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=config["training"]["batch_size"], shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config["validation"]["batch_size"])
+    return train_loader, val_loader
 
 def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, writer, epoch):
     train_loss = 0.0

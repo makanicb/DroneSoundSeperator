@@ -23,6 +23,9 @@ model:
 
 # Training parameters
 training:
+  use_amp: true              # Enable automatic mixed precision
+  gradient_accumulation_steps: 4  # Accumulate gradients over 4 batches
+  max_gpu_mem: 0.85         # Target GPU memory utilization
   batch_size: 16
   epochs: 50
   lr: 0.0003
@@ -43,8 +46,17 @@ validation:
   interval: 1                # Validate every N epochs
   batch_size: 32
 
+# Evaluation parameters
+evaluation:
+  use_amp: true
+  max_retries: 3
+  batch_reduction_factor: 2
+  default_batch_size: 8
+
 # Checkpoint parameters
 checkpoints:
+  save_rng_state: true       # Save random states
+  save_optimizer_state: true
   save_dir: experiments/run1
   save_best_only: true       # Only save when validation metric improves
   save_frequency: 5          # Save every N epochs (if save_best_only=false)

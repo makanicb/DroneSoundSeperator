@@ -26,6 +26,10 @@ class MultiChannelDroneDataset(Dataset):
         mode: str = "train",
         split: float = 0.8,
     ):
+        # Store parameters as attributes
+        self.sample_rate = sample_rate
+        self.chunk_size_seconds = chunk_size_seconds
+
         # Load dataset_overview.json
         with open(dataset_overview_path, "r") as f:
             self.dataset_overview = json.load(f)  # List of {"session_id", "clean", "noise"}
@@ -59,24 +63,30 @@ class MultiChannelDroneDataset(Dataset):
     def __getitem__(self, idx):
         session = self.sessions[idx]
     
-        # 1. Load mixed audio (shape: [samples, channels])
-        mix_path = self.mixtures_dir / session["session_id"] / "audio_chunks" / "chunk_0.npy"
-        mixed_audio = np.load(mix_path)
+        try:
+            # 1. Load mixed audio (shape: [samples, channels])
+            mix_path = self.mixtures_dir / session["session_id"] / "audio_chunks" / "chunk_0.npy"
+            mixed_audio = np.load(mix_path)
     
-        # 2. Load corresponding clean audio (shape: [samples, channels])
-        clean_path = self.clean_dir / Path(session["clean"]).name  # Extract filename from path
-        clean_audio = np.load(clean_path)
+            # 2. Load corresponding clean audio (shape: [samples, channels])
+            clean_path = self.clean_dir / Path(session["clean"]).name  # Extract filename from path
+            clean_audio = np.load(clean_path)
     
-        # 3. Ensure shapes match (pad/truncate if needed)
-        target_length = int(self.chunk_size_seconds * self.sample_rate)
-        mixed_audio = self._ensure_length(mixed_audio, target_length)
-        clean_audio = self._ensure_length(clean_audio, target_length)
+            # 3. Ensure shapes match (pad/truncate if needed)
+            target_length = int(self.chunk_size_seconds * self.sample_rate)
+            mixed_audio = self._ensure_length(mixed_audio, target_length)
+            clean_audio = self._ensure_length(clean_audio, target_length)
     
-        # 4. Convert to tensors and normalize
-        mixed_tensor = torch.from_numpy(mixed_audio).float().permute(1, 0)  # [C, S]
-        clean_tensor = torch.from_numpy(clean_audio).float().permute(1, 0)  # [C, S]
+            # 4. Convert to tensors and normalize
+            mixed_tensor = torch.from_numpy(mixed_audio).float().permute(1, 0)  # [C, S]
+            clean_tensor = torch.from_numpy(clean_audio).float().permute(1, 0)  # [C, S]
     
-        return mixed_tensor, clean_tensor
+            return mixed_tensor, clean_tensor
+
+        except Exception as e:
+            logger.error(f"Error loading session {session['session_id']}: {str(e)}")
+            # Return silent dummy audio
+            return torch.zeros(16, int(self.sample_rate * self.chunk_size_seconds)), metadata
     
     def _ensure_length(self, audio: np.ndarray, target_samples: int) -> np.ndarray:
         """Pad or truncate audio to target length."""
@@ -91,11 +101,6 @@ class MultiChannelDroneDataset(Dataset):
             return np.pad(audio, ((0, padding), (0, 0)), mode="constant")
         else:
             return audio
-    
-            except Exception as e:
-                logger.error(f"Error loading {chunk_path}: {str(e)}")
-                # Return silent dummy audio
-                return torch.zeros(16, int(self.sample_rate * self.chunk_size_seconds)), metadata
 
     def process_audio(self, audio):
         """

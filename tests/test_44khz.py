@@ -24,12 +24,16 @@ def test_config_validation(config):
     assert config['n_fft'] == 2048
     assert config['hop_length'] == 441
 
-def test_44khz_dataset_chunks():
+def test_44khz_dataset_chunks(config):
     # Verify dataset handles 44.1kHz chunks
     dataset = MultiChannelDroneDataset(
-        data_dir="tests/test_data",
+        mixtures_dir=config['mix_dir'],
+        clean_dir=config['clean_dir'],
+        noise_dir=config['noise_dir'],
+        dataset_overview_path=config['dataset_overview'],
         sample_rate=44100,
-        chunk_size_seconds=3.0
+        chunk_size_seconds=3.0,
+        split=1.0
     )
     audio, _ = dataset[0]
     assert audio.shape == (16, 44100 * 3)  # (C, S)

@@ -28,7 +28,7 @@ def test_stft_roundtrip(test_audio):
 
 def test_dataset_loading(config):
     dataset = MultiChannelDroneDataset(
-        data_dir=config['data_dir'],
+        mixtures_dir=config['data_dir'],
         sample_rate=config['sample_rate'],
         chunk_size_seconds=3.0
     )

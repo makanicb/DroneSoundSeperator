@@ -1,7 +1,10 @@
 # Configuration file for DroneSoundSeparator
 
 # Data configuration
-data_dir: tests/test_data
+mix_dir: tests/test_data/test_mix
+clean_dir: tests/test_data/test_clean
+noise_dir: tests/test_data/test_noise
+dataset_overview: tests/test_data/test_mix/dataset_overview.json
 snr_levels: [-5, 0, 5, 10]   # SNRs used for mixing
 sample_rate: 44100           # Target sample rate
 train_test_split: 0.8        # Proportion of data used for training

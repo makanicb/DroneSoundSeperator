@@ -12,9 +12,9 @@ from tqdm import tqdm
 import time
 from datetime import datetime
 
-from data_loader import MultiChannelDroneDataset
-from model import UNetSeparator
-from utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar
+from src.data_loader import MultiChannelDroneDataset
+from src.model import UNetSeparator
+from src.utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar
 
 def train(config_path, resume_checkpoint=None, max_steps=None):
     # Load config
@@ -37,7 +37,11 @@ def train(config_path, resume_checkpoint=None, max_steps=None):
     
     # Setup optimizer
     optimizer = create_optimizer(config, model)
-    scheduler = create_scheduler(config, optimizer)
+    # Initialize scheduler only if enabled
+    if config["training"]["lr_scheduler"]["use"]:
+        scheduler = create_scheduler(config, optimizer)
+    else:
+        scheduler = None
     
     # Mixed precision setup
     scaler = torch.cuda.amp.GradScaler(enabled=config['training']['use_amp'])
@@ -154,22 +158,40 @@ def create_optimizer(config, model):
         raise ValueError(f"Unsupported optimizer: {optimizer_type}")
 
 def create_scheduler(config, optimizer):
-    scheduler_type = config["scheduler"]["type"]
+    # Corrected path to match config.yaml structure
+    scheduler_config = config["training"]["lr_scheduler"]
+    scheduler_type = scheduler_config["type"]
     
-    if scheduler_type == "ReduceLROnPlateau":
+    if scheduler_type == "plateau":
         return torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
-            mode="max",  # Assuming you monitor validation SDR
-            factor=config["scheduler"].get("factor", 0.5),
-            patience=config["scheduler"].get("patience", 3)
+            mode="max",
+            factor=scheduler_config.get("factor", 0.5),
+            patience=scheduler_config.get("patience", 5)
         )
-    elif scheduler_type == "CosineAnnealing":
+    elif scheduler_type == "cosine":  # Match config's "cosine" type (not "CosineAnnealing")
         return torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_max=config["scheduler"].get("T_max", 10)
+            T_max=scheduler_config.get("step_size", 10)
+        )
+    elif scheduler_type == "step":
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=scheduler_config.get("step_size", 10),
+            gamma=scheduler_config.get("gamma", 0.5)
         )
     else:
         raise ValueError(f"Unsupported scheduler: {scheduler_type}")
+
+def update_scheduler(scheduler, config, val_loss=None):
+    if scheduler is None:
+        return
+    
+    # For plateau schedulers, step with validation metric
+    if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+        scheduler.step(val_loss)
+    else:
+        scheduler.step()
 
 def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, writer, epoch, max_steps=None, total_steps=0):
     train_loss = 0.0

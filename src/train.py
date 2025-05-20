@@ -119,13 +119,13 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
     train_loss = 0.0
     optimizer.zero_grad()
     
-    for batch_idx, (noisy, clean) in enumerate(tqdm(loader, desc=f"Epoch {epoch+1}")):
-        noisy = noisy.to(device, non_blocking=True)
+    for batch_idx, (mixed, clean) in enumerate(tqdm(loader, desc=f"Epoch {epoch+1}")):
+        mixed = mixed.to(device, non_blocking=True)
         clean = clean.to(device, non_blocking=True)
         
         with torch.cuda.amp.autocast(enabled=config['training']['use_amp']):
-            loss = forward_pass(model, noisy, clean, config)
-            loss /= grad_accum
+            est_waveform = model(mixed)
+            loss = si_sdr_loss(est_waveform, clean) / grad_accum
             
         scaler.scale(loss).backward()
         

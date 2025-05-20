@@ -55,10 +55,11 @@ class MultiChannelDroneDataset(Dataset):
         else:
             self.sessions = self.sessions[split_idx:]
 
+        self.indices = list(range(len(self.sessions)))
         logging.info(f"Initialized dataset with {len(self.sessions)} {mode} samples")
         
     def __len__(self):
-        return len(self.indices)
+        return len(self.sessions)
 
     def __getitem__(self, idx):
         session = self.sessions[idx]

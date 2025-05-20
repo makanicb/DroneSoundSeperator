@@ -15,7 +15,12 @@ def test_clipped_audio(config):
     # Test clipping handling
     clipped = np.random.uniform(-1.5, 1.5, (config['sample_rate'], 16)).astype(np.float32)
     assert np.max(np.abs(clipped)) > 1.0  # Verify test is valid
-    dataset = MultiChannelDroneDataset(mixtures_dir=config['data_dir'])
+    dataset = MultiChannelDroneDataset(
+        mixtures_dir=config['mix_dir'],
+        clean_dir=config['clean_dir'],
+        noise_dir=config['noise_dir'],
+        dataset_overview_path=config['dataset_overview']
+    )
     processed, _ = dataset.process_audio(clipped)
 
     # Convert to numpy if it's a tensor

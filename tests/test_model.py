@@ -40,3 +40,14 @@ def test_stft_consistency():
     complex_spec = stft(wav, n_fft=2048, hop_length=441)
     reconstructed = istft(complex_spec, n_fft=2048, hop_length=441, length=44100)
     assert torch.allclose(wav, reconstructed, atol=1e-3)  # ~0.1% tolerance
+
+def test_mask_application():
+    model = UNetSeparator(
+        n_fft=2048, 
+        hop_length=441, 
+        win_length=2048,
+        input_channels=16
+    )
+    mixed = torch.randn(2, 16, 44100)
+    est = model(mixed)
+    assert not torch.allclose(est, mixed)  # Ensure masking changes output

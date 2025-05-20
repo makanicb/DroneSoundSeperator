@@ -144,23 +144,20 @@ def validate(model, loader, device, config, writer, epoch):
     model.eval()
     val_loss = 0.0
     metrics = {'sdr': [], 'sir': [], 'sar': []}
-    
+
     with torch.no_grad():
-        for noisy, clean in tqdm(loader, desc="Validating"):
-            noisy = noisy.to(device, non_blocking=True)
-            clean = clean.to(device, non_blocking=True)
-            
+        for mixed, clean in loader:
+            mixed = mixed.to(device)
+            clean = clean.to(device)
+
             with torch.cuda.amp.autocast(enabled=config['validation']['use_amp']):
-                est_wav = model_forward(model, noisy, config)
-                loss = si_sdr_loss(est_wav, clean)
-                
-            val_loss += loss.item()
-            update_metrics(metrics, clean, est_wav)
-            
-            free_memory()
-            
-    log_validation(writer, epoch, val_loss/len(loader), metrics)
-    return val_loss/len(loader), metrics
+                est_waveform = model(mixed)
+                loss = si_sdr_loss(est_waveform, clean)
+                val_loss += loss.item()
+                update_metrics(metrics, clean, est_waveform)  # Compute SDR/SIR/SAR
+
+    log_validation(writer, epoch, val_loss / len(loader), metrics)
+    return val_loss / len(loader), metrics
 
 def handle_checkpoints(config, model, optimizer, scheduler, epoch, val_loss, 
                       best_val_loss, early_stopping_counter, metrics):

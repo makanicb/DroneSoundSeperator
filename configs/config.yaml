@@ -24,6 +24,9 @@ model:
   base_channels: 32
   dropout_rate: 0.2
   use_batch_norm: true
+  n_fft: 2048
+  hop_length: 441 
+  win_length: 2048
 
 # Training parameters
 training:

@@ -16,7 +16,7 @@ from data_loader import MultiChannelDroneDataset
 from model import UNetSeparator
 from utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar
 
-def train(config_path, resume_checkpoint=None):
+def train(config_path, resume_checkpoint=None, max_steps=None):
     # Load config
     with open(config_path) as f:
         config = yaml.safe_load(f)
@@ -31,7 +31,7 @@ def train(config_path, resume_checkpoint=None):
     
     # Initialize model
     model = UNetSeparator(
-        in_channels=config['model']['in_channels'],
+        input_channels=config['model']['in_channels'],
         base_channels=config['model']['base_channels']
     ).to(device)
     
@@ -60,12 +60,14 @@ def train(config_path, resume_checkpoint=None):
     writer = SummaryWriter(log_dir=config['logging']['log_dir']) if config['logging']['use_tensorboard'] else None
     
     # Training loop
+    total_steps = 0
     for epoch in range(start_epoch, config['training']['epochs']):
         # Training phase
         model.train()
-        train_loss = train_epoch(model, train_loader, optimizer, scaler, device, 
-                                config, gradient_accumulation_steps, writer, epoch)
-        
+        train_loss, steps_completed = train_epoch(model, train_loader, optimizer, scaler, device, 
+                                config, gradient_accumulation_steps, writer, epoch,
+                                max_steps, total_steps)
+
         # Validation phase
         if epoch % config['validation']['interval'] == 0:
             val_loss, metrics = validate(model, val_loader, device, config, writer, epoch)
@@ -83,6 +85,13 @@ def train(config_path, resume_checkpoint=None):
 
         # Learning rate scheduling
         update_scheduler(scheduler, config, val_loss)
+
+        # Exit if max_steps reached
+        total_steps += steps_completed 
+        
+        if max_steps is not None and total_steps >= max_steps:
+            print(f"Stopping early at {total_steps} steps")
+            break
         
     # Final cleanup
     save_final_model(config, model, optimizer, epoch)
@@ -115,11 +124,63 @@ def create_data_loaders(config, device):
     val_loader = DataLoader(val_dataset, batch_size=config["validation"]["batch_size"])
     return train_loader, val_loader
 
-def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, writer, epoch):
+def create_optimizer(config, model):
+    optimizer_type = config["training"]["optimizer"]  # Path: training → optimizer
+    lr = config["training"]["lr"]                    # From training.lr
+    weight_decay = config["training"]["weight_decay"]
+
+    params = model.parameters()
+
+    if optimizer_type.lower() == "adam":
+        return torch.optim.Adam(
+            params,
+            lr=lr,
+            weight_decay=weight_decay
+        )
+    elif optimizer_type.lower() == "adamw":
+        return torch.optim.AdamW(
+            params,
+            lr=lr,
+            weight_decay=weight_decay
+        )
+    elif optimizer_type.lower() == "sgd":
+        return torch.optim.SGD(
+            params,
+            lr=lr,
+            momentum=0.9,       # Hardcoded (add to config if needed)
+            weight_decay=weight_decay
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer: {optimizer_type}")
+
+def create_scheduler(config, optimizer):
+    scheduler_type = config["scheduler"]["type"]
+    
+    if scheduler_type == "ReduceLROnPlateau":
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="max",  # Assuming you monitor validation SDR
+            factor=config["scheduler"].get("factor", 0.5),
+            patience=config["scheduler"].get("patience", 3)
+        )
+    elif scheduler_type == "CosineAnnealing":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=config["scheduler"].get("T_max", 10)
+        )
+    else:
+        raise ValueError(f"Unsupported scheduler: {scheduler_type}")
+
+def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, writer, epoch, max_steps=None, total_steps=0):
     train_loss = 0.0
     optimizer.zero_grad()
+    steps_completed = 0
     
     for batch_idx, (mixed, clean) in enumerate(tqdm(loader, desc=f"Epoch {epoch+1}")):
+        # Exit early if max_steps reached
+        if max_steps is not None and (total_steps + steps_completed) >= max_steps:
+            break
+
         mixed = mixed.to(device, non_blocking=True)
         clean = clean.to(device, non_blocking=True)
         
@@ -137,8 +198,10 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
 
         train_loss += loss.item()
         log_training(writer, epoch*len(loader)+batch_idx, loss.item())
+ 
+        steps_completed += 1
         
-    return train_loss / len(loader)
+    return train_loss / len(loader), steps_completed
 
 def validate(model, loader, device, config, writer, epoch):
     model.eval()
@@ -202,6 +265,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='configs/config.yaml')
     parser.add_argument('--resume', type=str, help='Checkpoint path to resume from')
+    parser.add_argument('--max_steps', type=int, default=None, help='Limit training to N steps')
     args = parser.parse_args()
     
-    train(args.config, args.resume)
+    train(args.config, args.resume, args.max_steps)

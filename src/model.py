@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from src.utils import stft, istft  # Use provided multi-channel STFT functions
 
 class MultiChannelConvBlock(nn.Module):
     """Convolutional block that preserves multi-channel information."""
@@ -195,3 +196,63 @@ class MultiChannelUNet(nn.Module):
         mask = torch.sigmoid(self.final_conv(decoded))
         
         return mask
+
+class UNetSeparator(nn.Module):
+    """
+    End-to-end U-Net audio separator that:
+    1. Converts raw waveform to complex STFT spectrograms
+    2. Predicts a magnitude mask using U-Net
+    3. Reconstructs waveform using original phase
+    """
+    def __init__(
+        self, 
+        n_fft: int = 2048, 
+        hop_length: int = 441, 
+        win_length: int = 2048,
+        input_channels: int = 16, 
+        **unet_kwargs
+    ):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.win_length = win_length
+        
+        # U-Net processes magnitude spectrograms
+        self.unet = MultiChannelUNet(
+            input_channels=input_channels,
+            output_channels=input_channels,  # One mask per channel
+            **unet_kwargs
+        )
+
+    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            waveform: Input mixture [B, C, T]
+        Returns:
+            est_waveform: Estimated clean [B, C, T]
+        """
+        # 1. Compute complex STFT
+        complex_spec = stft(waveform, self.n_fft, self.hop_length, self.win_length)
+        
+        # 2. Get magnitude and phase
+        mag_spec = torch.abs(complex_spec)
+        phase_spec = torch.angle(complex_spec)
+        
+        # 3. Predict magnitude mask
+        mask = torch.sigmoid(self.unet(mag_spec))  # [B, C, F, T]
+        
+        # 4. Apply mask to magnitude
+        est_mag = mag_spec * mask
+        
+        # 5. Reconstruct complex spectrogram
+        est_complex_spec = est_mag * torch.exp(1j * phase_spec)
+        
+        # 6. Convert back to waveform
+        est_waveform = istft(
+            est_complex_spec,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_length,
+            length=waveform.shape[-1]
+        )
+        return est_waveform

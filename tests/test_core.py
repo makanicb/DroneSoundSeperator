@@ -28,10 +28,14 @@ def test_stft_roundtrip(test_audio):
 
 def test_dataset_loading(config):
     dataset = MultiChannelDroneDataset(
-        mixtures_dir=config['data_dir'],
+        mixtures_dir=config['mix_dir'],
+        clean_dir=config['clean_dir'],
+        noise_dir=config['noise_dir'],
+        dataset_overview_path=config['dataset_overview'],
         sample_rate=config['sample_rate'],
-        chunk_size_seconds=3.0
+        chunk_size_seconds=3.0,
+        split=1.0
     )
-    audio, meta = dataset[0]
-    assert audio.shape == (16, config['sample_rate'] * 3)  # (C, S)
-    assert isinstance(meta, dict)
+    mixed, clean = dataset[0]  # Changed variable names
+    assert mixed.shape == (16, config['sample_rate'] * 3)  # (C, S)
+    assert clean.shape == (16, config['sample_rate'] * 3)  # Add this check

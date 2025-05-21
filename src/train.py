@@ -319,6 +319,18 @@ def free_memory():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+def save_final_model(config, model, optimizer, epoch):
+    """Saves model at end of training (even if interrupted early)."""
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'config': config
+    }
+    path = os.path.join(config['checkpoints']['save_dir'], "final_model.pt")
+    torch.save(checkpoint, path)
+    print(f"Saved final model to {path}")
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()

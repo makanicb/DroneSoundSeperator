@@ -30,7 +30,7 @@ model:
 
 # Training parameters
 training:
-  use_amp: true              # Enable automatic mixed precision
+  use_amp: false              # Enable automatic mixed precision
   gradient_accumulation_steps: 4  # Accumulate gradients over 4 batches
   max_gpu_mem: 0.85         # Target GPU memory utilization
   batch_size: 16
@@ -50,6 +50,7 @@ training:
 
 # Validation parameters
 validation:
+  use_amp: false              # Enable automatic mixed precision
   interval: 1                # Validate every N epochs
   batch_size: 32
 
@@ -69,7 +70,7 @@ checkpoints:
   save_frequency: 5          # Save every N epochs (if save_best_only=false)
 
 # Hardware settings
-device: cuda                 # "cuda" or "cpu"
+device: cpu                  # "cuda" or "cpu"
 num_workers: 4               # Number of workers for data loading
 
 # Logging parameters

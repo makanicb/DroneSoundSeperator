@@ -16,7 +16,7 @@ from src.data_loader import MultiChannelDroneDataset
 from src.model import UNetSeparator
 from src.utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar
 
-def train(config_path, resume_checkpoint=None, max_steps=None):
+def train(config_path, resume_checkpoint=None, max_steps=None, max_val_steps=None):
     # Load config
     with open(config_path) as f:
         config = yaml.safe_load(f)
@@ -74,7 +74,7 @@ def train(config_path, resume_checkpoint=None, max_steps=None):
 
         # Validation phase
         if epoch % config['validation']['interval'] == 0:
-            val_loss, metrics = validate(model, val_loader, device, config, writer, epoch)
+            val_loss, metrics = validate(model, val_loader, device, config, writer, epoch, max_val_steps)
             
             # Checkpoint handling
             best_val_loss, early_stopping_counter = handle_checkpoints(
@@ -216,7 +216,8 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
-            free_memory()
+            if config['device'] == "cpu":
+                free_memory()
 
         train_loss += loss.item()
         log_training(writer, epoch*len(loader)+batch_idx, loss.item())
@@ -225,13 +226,18 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
         
     return train_loss / len(loader), steps_completed
 
-def validate(model, loader, device, config, writer, epoch):
+def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
     model.eval()
     val_loss = 0.0
     metrics = {'sdr': [], 'sir': [], 'sar': []}
 
     with torch.no_grad():
-        for mixed, clean in loader:
+        for batch_idx, (mixed, clean) in enumerate(loader):
+
+            # Exit early if max_val_steps is set
+            if max_val_steps is not None and batch_idx >= max_val_steps:
+                break            
+
             mixed = mixed.to(device)
             clean = clean.to(device)
 
@@ -282,12 +288,44 @@ def save_checkpoint(config, model, optimizer, scheduler, epoch,
     torch.save(checkpoint, path)
     print(f"Saved {suffix} checkpoint to {path}")
 
+def load_checkpoint(checkpoint_path, device, model, optimizer, scheduler, 
+                   config, start_epoch, best_val_loss, early_stopping_counter):
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    if scheduler and checkpoint['scheduler_state_dict']:
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    start_epoch = checkpoint['epoch'] + 1
+    best_val_loss = checkpoint['best_val_loss']
+    early_stopping_counter = checkpoint['early_stopping_counter']
+    print(f"Resuming from epoch {start_epoch}")
+
+# Mock implementations to avoid errors (customize later)
+def log_training(writer, step, loss):
+    if writer:
+        writer.add_scalar("Loss/train", loss, step)
+
+def log_validation(writer, epoch, val_loss, metrics):
+    if writer:
+        writer.add_scalar("Loss/val", val_loss, epoch)
+
+def update_metrics(metrics_dict, clean, estimate):
+    # Mock metric calculation
+    metrics_dict['sdr'].append(0.0)
+    metrics_dict['sir'].append(0.0)
+    metrics_dict['sar'].append(0.0)
+
+def free_memory():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='configs/config.yaml')
     parser.add_argument('--resume', type=str, help='Checkpoint path to resume from')
     parser.add_argument('--max_steps', type=int, default=None, help='Limit training to N steps')
+    parser.add_argument('--max_val_steps', type=int, default=None, help='Limit validation to N batches')
     args = parser.parse_args()
     
-    train(args.config, args.resume, args.max_steps)
+    train(args.config, args.resume, args.max_steps, args.max_val_steps)

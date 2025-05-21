@@ -68,7 +68,7 @@ def train(config_path, resume_checkpoint=None, max_steps=None, max_val_steps=Non
     for epoch in range(start_epoch, config['training']['epochs']):
         # Training phase
         model.train()
-        train_loss, steps_completed = train_epoch(model, train_loader, optimizer, scaler, device, 
+        train_loss, steps_completed, optimizer_steps = train_epoch(model, train_loader, optimizer, scaler, device, 
                                 config, gradient_accumulation_steps, writer, epoch,
                                 max_steps, total_steps)
 
@@ -88,7 +88,8 @@ def train(config_path, resume_checkpoint=None, max_steps=None, max_val_steps=Non
                 break
 
         # Learning rate scheduling
-        update_scheduler(scheduler, config, val_loss)
+        if scheduler and optimizer_steps > 0: # Only update if optimizer stepped
+            update_scheduler(scheduler, config, val_loss)
 
         # Exit if max_steps reached
         total_steps += steps_completed 
@@ -197,6 +198,7 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
     train_loss = 0.0
     optimizer.zero_grad()
     steps_completed = 0
+    optimizer_steps = 0
     
     for batch_idx, (mixed, clean) in enumerate(tqdm(loader, desc=f"Epoch {epoch+1}")):
         # Exit early if max_steps reached
@@ -218,13 +220,14 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
             optimizer.zero_grad()
             if config['device'] == "cpu":
                 free_memory()
+            optimizer_steps += 1
 
         train_loss += loss.item()
         log_training(writer, epoch*len(loader)+batch_idx, loss.item())
  
         steps_completed += 1
         
-    return train_loss / len(loader), steps_completed
+    return train_loss / len(loader), steps_completed, optimizer_steps
 
 def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
     model.eval()

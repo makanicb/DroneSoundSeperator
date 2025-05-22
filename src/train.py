@@ -84,13 +84,13 @@ def train(config_path, resume_checkpoint=None, max_steps=None, max_val_steps=Non
             val_loss, metrics = validate(model, val_loader, device, config, writer, epoch, max_val_steps)
             
             # Checkpoint handling
-            best_val_loss, early_stopping_counter = handle_checkpoints(
+            best_val_loss, early_stopping_counter, should_stop= handle_checkpoints(
                 config, model, optimizer, scheduler, epoch, val_loss, 
                 best_val_loss, early_stopping_counter, metrics
             )
             
             # Early stopping
-            if early_stopping_counter >= config['training']['early_stopping']['patience']:
+            if should_stop:
                 print(f"Early stopping at epoch {epoch+1}")
                 break
 
@@ -176,6 +176,7 @@ def create_scheduler(config, optimizer):
             mode="max",
             factor=scheduler_config.get("factor", 0.5),
             patience=scheduler_config.get("patience", 5)
+            min_lr=config["training"]["lr_scheduler"].get("min_lr", 1e-7)
         )
     elif scheduler_type == "cosine":  # Match config's "cosine" type (not "CosineAnnealing")
         return torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -227,6 +228,11 @@ def train_epoch(model, loader, optimizer, scaler, device, config, grad_accum, wr
             optimizer.zero_grad()
             if config['device'] == "cpu":
                 free_memory()
+
+            # Log LR after optimizer step
+            global_step = total_steps + steps_completed
+            log_learning_rate(writer, optimizer, global_step)
+
             optimizer_steps += 1
 
         train_loss += loss.item()
@@ -288,8 +294,17 @@ def handle_checkpoints(config, model, optimizer, scheduler, epoch, val_loss,
     if (epoch + 1) % config['checkpoints']['save_frequency'] == 0:
         save_checkpoint(config, model, optimizer, scheduler, epoch, 
                        best_val_loss, early_stopping_counter, metrics, "latest")
-        
-    return best_val_loss, early_stopping_counter
+
+    # Early stopping check with scheduler reset
+    if early_stopping_counter >= config['training']['early_stopping']['patience']:
+        print(f"Early stopping triggered at epoch {epoch+1}")
+        if scheduler:
+            # Reset scheduler to initial state
+            scheduler = create_scheduler(config, optimizer)
+            print("Scheduler reset to initial state")
+        return best_val_loss, early_stopping_counter, True
+    
+    return best_val_loss, early_stopping_counter, False
 
 def save_checkpoint(config, model, optimizer, scheduler, epoch, 
                    best_loss, early_stop_count, metrics, suffix):
@@ -356,6 +371,11 @@ def log_validation(writer, epoch, val_loss, metrics):
         
         # Log histograms (optional)
         writer.add_histogram("SDR_distribution", np.array(metrics['sdr']), epoch)
+
+def log_learning_rate(writer, optimizer, step):
+    if writer:
+        for param_group in optimizer.param_groups:
+            writer.add_scalar("Learning Rate", param_group['lr'], step)
 
 def update_metrics(metrics_dict, clean_audio, estimated_audio):
     """

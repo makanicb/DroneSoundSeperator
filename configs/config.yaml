@@ -52,8 +52,9 @@ training:
 # Validation parameters
 validation:
   use_amp: false              # Enable automatic mixed precision
-  interval: 1                # Validate every N epochs
+  interval: 1                 # Validate every N epochs
   batch_size: 32
+  save_samples_interval: 5    # Save samples every 5 epochs
 
 # Evaluation parameters
 evaluation:

@@ -14,7 +14,7 @@ from datetime import datetime
 
 from src.data_loader import MultiChannelDroneDataset
 from src.model import UNetSeparator
-from src.utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar
+from src.utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar, save_comparison_samples
 
 def train(config_path, resume_checkpoint=None, max_steps=None, max_val_steps=None):
     # Load config
@@ -175,7 +175,7 @@ def create_scheduler(config, optimizer):
             optimizer,
             mode="max",
             factor=scheduler_config.get("factor", 0.5),
-            patience=scheduler_config.get("patience", 5)
+            patience=scheduler_config.get("patience", 5),
             min_lr=config["training"]["lr_scheduler"].get("min_lr", 1e-7)
         )
     elif scheduler_type == "cosine":  # Match config's "cosine" type (not "CosineAnnealing")
@@ -276,6 +276,15 @@ def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
                 "SIR": f"{np.mean(metrics['sir']):.2f}",
             })
 
+            # Audio Comparison Samples
+            if epoch % config['validation']['save_samples_interval'] == 0:
+                save_comparison_samples(
+                    clean[:2],  # Save first 2 samples
+                    mixed[:2], 
+                    est_waveform[:2],
+                    os.path.join(config['checkpoints']['save_dir'], f"epoch_{epoch}")
+                )
+
     val_progress.close()  # Clean up progress bar
 
     log_validation(writer, epoch, val_loss / len(loader), metrics)
@@ -336,11 +345,11 @@ def load_checkpoint(checkpoint_path, device, model, optimizer, scheduler,
     state_dict = checkpoint['model_state_dict']
     
     # Case 1: Current model is DataParallel, but checkpoint was saved without "module." prefix
-    if isinstance(model, torch.nn.DataParallel) and not any(k.startswith('module.') for k in state_dict.keys():
+    if isinstance(model, torch.nn.DataParallel) and not any(k.startswith('module.') for k in state_dict.keys()):
         state_dict = {'module.' + k: v for k, v in state_dict.items()}
     
     # Case 2: Current model is NOT DataParallel, but checkpoint has "module." prefix
-    elif not isinstance(model, torch.nn.DataParallel) and any(k.startswith('module.') for k in state_dict.keys():
+    elif not isinstance(model, torch.nn.DataParallel) and any(k.startswith('module.') for k in state_dict.keys()):
         state_dict = {k.replace('module.', '', 1): v for k, v in state_dict.items()}
     
     # Load adjusted state dict

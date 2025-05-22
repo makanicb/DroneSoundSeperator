@@ -223,3 +223,10 @@ def save_audio(audio_tensor, output_path, sample_rate=16000):
             np_path = output_path.rsplit('.', 1)[0] + '.npy'
             np.save(np_path, audio_tensor)
             print(f"Failed to save in requested format. Saved as numpy array to {np_path}")
+
+def save_comparison_samples(clean, mixed, estimate, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    for i, (c, m, e) in enumerate(zip(clean, mixed, estimate)):
+        sf.write(f"{output_dir}/sample_{i}_clean.wav", c.cpu().numpy(), 44100)
+        sf.write(f"{output_dir}/sample_{i}_mixed.wav", m.cpu().numpy(), 44100)
+        sf.write(f"{output_dir}/sample_{i}_estimate.wav", e.cpu().numpy(), 44100)

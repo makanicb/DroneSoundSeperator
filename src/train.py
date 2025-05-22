@@ -33,7 +33,14 @@ def train(config_path, resume_checkpoint=None, max_steps=None, max_val_steps=Non
     model = UNetSeparator(
         input_channels=config['model']['in_channels'],
         base_channels=config['model']['base_channels']
-    ).to(device)
+    )
+
+    # Enable Multi-GPU if available
+    if torch.cuda.device_count() > 1 and config['training']['use_multi_gpu']:
+        print(f"Using {torch.cuda.device_count()} GPUs!")
+        model = torch.nn.DataParallel(model)
+    
+    model = model.to(device)  # Move to GPU(s)/CPU
     
     # Setup optimizer
     optimizer = create_optimizer(config, model)
@@ -288,7 +295,7 @@ def save_checkpoint(config, model, optimizer, scheduler, epoch,
                    best_loss, early_stop_count, metrics, suffix):
     checkpoint = {
         'epoch': epoch,
-        'model_state_dict': model.state_dict(),
+        'model_state_dict': model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(), 
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
         'best_val_loss': best_loss,
@@ -309,7 +316,22 @@ def save_checkpoint(config, model, optimizer, scheduler, epoch,
 def load_checkpoint(checkpoint_path, device, model, optimizer, scheduler, 
                    config, start_epoch, best_val_loss, early_stopping_counter):
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Adjust state_dict keys for DataParallel compatibility
+    state_dict = checkpoint['model_state_dict']
+    
+    # Case 1: Current model is DataParallel, but checkpoint was saved without "module." prefix
+    if isinstance(model, torch.nn.DataParallel) and not any(k.startswith('module.') for k in state_dict.keys():
+        state_dict = {'module.' + k: v for k, v in state_dict.items()}
+    
+    # Case 2: Current model is NOT DataParallel, but checkpoint has "module." prefix
+    elif not isinstance(model, torch.nn.DataParallel) and any(k.startswith('module.') for k in state_dict.keys():
+        state_dict = {k.replace('module.', '', 1): v for k, v in state_dict.items()}
+    
+    # Load adjusted state dict
+    model.load_state_dict(state_dict)
+    
+    # Load other components
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     if scheduler and checkpoint['scheduler_state_dict']:
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])

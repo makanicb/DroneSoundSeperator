@@ -257,7 +257,11 @@ def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
             
             # Update progress bar
             val_progress.update(1)
-            val_progress.set_postfix({"Val Loss": f"{loss.item():.4f}"})
+            val_progress.set_postfix({
+                "Val Loss": f"{loss.item():.4f}",
+                "SDR": f"{np.mean(metrics['sdr']):.2f}",
+                "SIR": f"{np.mean(metrics['sir']):.2f}",
+            })
 
     val_progress.close()  # Clean up progress bar
 
@@ -322,12 +326,44 @@ def log_training(writer, step, loss):
 def log_validation(writer, epoch, val_loss, metrics):
     if writer:
         writer.add_scalar("Loss/val", val_loss, epoch)
+        
+        # Log metrics
+        writer.add_scalar("SDR/val", np.mean(metrics['sdr']), epoch)
+        writer.add_scalar("SIR/val", np.mean(metrics['sir']), epoch)
+        writer.add_scalar("SAR/val", np.mean(metrics['sar']), epoch)
+        
+        # Log histograms (optional)
+        writer.add_histogram("SDR_distribution", np.array(metrics['sdr']), epoch)
 
-def update_metrics(metrics_dict, clean, estimate):
-    # Mock metric calculation
-    metrics_dict['sdr'].append(0.0)
-    metrics_dict['sir'].append(0.0)
-    metrics_dict['sar'].append(0.0)
+def update_metrics(metrics_dict, clean_audio, estimated_audio):
+    """
+    Compute metrics using utils.py's compute_sdr_sir_sar()
+    Shapes: clean_audio [batch, channels, samples]
+            estimated_audio [batch, channels, samples]
+    """
+    batch_size = clean_audio.shape[0]
+    
+    for i in range(batch_size):
+        # Get single sample from batch
+        clean_sample = clean_audio[i]  # [channels, samples]
+        est_sample = estimated_audio[i]  # [channels, samples]
+
+         # --- Edge Case 1: Silent Reference Audio ---
+        if torch.max(torch.abs(clean_sample)) < 1e-6:
+            continue  # Skip this sample
+
+        # --- Edge Case 2: Length Mismatch ---
+        min_len = min(clean_sample.shape[-1], est_sample.shape[-1])
+        clean_sample = clean_sample[..., :min_len]
+        est_sample = est_sample[..., :min_len]
+        
+        # Compute metrics
+        metrics = compute_sdr_sir_sar(clean_sample, est_sample)
+        
+        # Append results
+        metrics_dict['sdr'].append(metrics['sdr'])
+        metrics_dict['sir'].append(metrics['sir'])
+        metrics_dict['sar'].append(metrics['sar'])
 
 def free_memory():
     if torch.cuda.is_available():

@@ -3,7 +3,7 @@ numpy<2
 scipy
 librosa
 pyyaml
-mir_eval
+mir_eval<=0.8
 tensorboard
 torchaudio
 soundfile>=0.12.1  

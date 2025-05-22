@@ -234,6 +234,11 @@ def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
     val_loss = 0.0
     metrics = {'sdr': [], 'sir': [], 'sar': []}
 
+   # Add progress bar
+    val_progress = tqdm(total=max_val_steps if max_val_steps else len(loader), 
+                        desc=f"Validating Epoch {epoch+1}", 
+                        leave=False)
+
     with torch.no_grad():
         for batch_idx, (mixed, clean) in enumerate(loader):
 
@@ -249,6 +254,12 @@ def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
                 loss = si_sdr_loss(est_waveform, clean)
                 val_loss += loss.item()
                 update_metrics(metrics, clean, est_waveform)  # Compute SDR/SIR/SAR
+            
+            # Update progress bar
+            val_progress.update(1)
+            val_progress.set_postfix({"Val Loss": f"{loss.item():.4f}"})
+
+    val_progress.close()  # Clean up progress bar
 
     log_validation(writer, epoch, val_loss / len(loader), metrics)
     return val_loss / len(loader), metrics

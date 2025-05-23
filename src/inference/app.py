@@ -1,6 +1,7 @@
-from fastapi import FastAPI, UploadFile, HTTPException 
+from fastapi import FastAPI, File, UploadFile, HTTPException 
 from fastapi.responses import FileResponse
 import torchaudio
+import torch
 import os
 import yaml
 from src.inference.model_loader import load_model
@@ -19,14 +20,8 @@ async def health_check():
     return {"status": "OK"}
 
 @app.post("/separate", response_model=SeparationResponse)
-async def separate_audio(request: SeparationRequest):
+async def separate_audio(file_upload: UploadFile = File(...)):
     try:
-        file_upload = request.file_upload
-
-        # Validate file exists
-        if not file_upload:
-            raise HTTPException(400, "No file uploaded")
-        
         # Validate file extension
         if not file_upload.filename.lower().endswith(tuple(config["allowed_extensions"])):
             raise HTTPException(400, "Invalid file format")
@@ -35,12 +30,12 @@ async def separate_audio(request: SeparationRequest):
         os.makedirs(config["temp_dir"], exist_ok=True)
         
         # Process file
-        input_path = os.path.join(config["temp_dir"], input_file.filename)
-        output_path = os.path.join(config["temp_dir"], f"clean_{input_file.filename}")
+        input_path = os.path.join(config["temp_dir"], file_upload.filename)
+        output_path = os.path.join(config["temp_dir"], f"clean_{file_upload.filename}")
         
         # Save uploaded file
         with open(input_path, "wb") as f:
-            content = await input_file.read()
+            content = await file_upload.read()
             if len(content) > config["max_file_size"] * 1024 * 1024:
                 raise HTTPException(413, "File too large")
             f.write(content)
@@ -65,6 +60,7 @@ async def separate_audio(request: SeparationRequest):
         )
     
     except Exception as e:
+        print(f"Error: {str(e)}")
         return {
             "success": False,
             "message": "Processing failed",

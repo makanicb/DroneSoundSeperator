@@ -7,25 +7,6 @@ class AudioFormat(str, Enum):
     WAV = "wav"
     MP3 = "mp3"
 
-class SeparationRequest(BaseModel):
-    """
-    Expected structure for API requests
-    """
-    file_url: Optional[str] = Field(
-        None,
-        example="https://example.com/noisy_audio.wav",
-        description="Remote URL of audio to process"
-    )
-    file_upload: Optional[UploadFile] = File(
-        None,
-        description="Direct audio file upload"
-    )
-    output_format: AudioFormat = Field(
-        AudioFormat.WAV,
-        example="wav",
-        description="Format for processed audio"
-    )
-
 class SeparationResponse(BaseModel):
     """
     Standardized API response

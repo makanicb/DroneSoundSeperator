@@ -1,0 +1,4 @@
+device: "cuda"  # or "cpu"
+temp_dir: "temp"  # For storing uploads/results
+allowed_extensions: ["wav", "mp3"]
+max_file_size: 50  # MB

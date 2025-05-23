@@ -8,3 +8,7 @@ tensorboard
 torchaudio
 soundfile>=0.12.1  
 tqdm>=4.66.0       
+fastapi==0.95.0
+uvicorn==0.21.1
+python-multipart
+torchaudio

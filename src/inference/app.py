@@ -1,11 +1,11 @@
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException 
 from fastapi.responses import FileResponse
 import torchaudio
 import os
 import yaml
 from src.inference.model_loader import load_model
 from src.utils import stft, istft
-from src.inference.schemas import SeparationResponse, HealthCheck  # Add missing imports
+from src.inference.schemas import SeparationResponse, SeparationRequest, HealthCheck
 
 # Load config
 with open("configs/inference.yaml") as f:
@@ -19,12 +19,16 @@ async def health_check():
     return {"status": "OK"}
 
 @app.post("/separate", response_model=SeparationResponse)
-async def separate_audio(input_file: SeperationRequest = Depends()):
+async def separate_audio(request: SeparationRequest):
     try:
         file_upload = request.file_upload
+
+        # Validate file exists
+        if not file_upload:
+            raise HTTPException(400, "No file uploaded")
         
-        # Validate input
-        if not input_file.filename.lower().endswith(tuple(config["allowed_extensions"])):
+        # Validate file extension
+        if not file_upload.filename.lower().endswith(tuple(config["allowed_extensions"])):
             raise HTTPException(400, "Invalid file format")
 
         # Create temp dir
@@ -54,10 +58,11 @@ async def separate_audio(input_file: SeperationRequest = Depends()):
         # Save result
         torchaudio.save(output_path, clean_wav, sr)
         
-         return FileResponse(
-            output_path,
-            media_type="audio/wav",
-            filename=os.path.basename(output_path)
+        return FileResponse(
+           output_path,
+           media_type="audio/wav",
+           filename=os.path.basename(output_path)
+        )
     
     except Exception as e:
         return {

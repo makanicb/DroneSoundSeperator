@@ -1,4 +1,4 @@
-from fastapi import UploadFile
+from fastapi import UploadFile, File
 from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
@@ -16,7 +16,7 @@ class SeparationRequest(BaseModel):
         example="https://example.com/noisy_audio.wav",
         description="Remote URL of audio to process"
     )
-    file_upload: Optional[UploadFile] = Field(
+    file_upload: Optional[UploadFile] = File(
         None,
         description="Direct audio file upload"
     )

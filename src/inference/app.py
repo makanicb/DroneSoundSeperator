@@ -19,8 +19,10 @@ async def health_check():
     return {"status": "OK"}
 
 @app.post("/separate", response_model=SeparationResponse)
-async def separate_audio(input_file: UploadFile):
+async def separate_audio(input_file: SeperationRequest = Depends()):
     try:
+        file_upload = request.file_upload
+        
         # Validate input
         if not input_file.filename.lower().endswith(tuple(config["allowed_extensions"])):
             raise HTTPException(400, "Invalid file format")
@@ -41,7 +43,9 @@ async def separate_audio(input_file: UploadFile):
         
         # Process audio
         waveform, sr = torchaudio.load(input_path)
+        print("Input shape:", waveform.unsqueeze(0).shape)
         spec = stft(waveform.unsqueeze(0))  # Add batch dimension
+        print("STFT shape:", spec.shape)
         with torch.no_grad():
             mask = model(spec)
         clean_spec = spec * mask
@@ -50,12 +54,10 @@ async def separate_audio(input_file: UploadFile):
         # Save result
         torchaudio.save(output_path, clean_wav, sr)
         
-        return {
-            "success": True,
-            "message": "Separation complete",
-            "processing_time_ms": 0,  # Add actual timing
-            "download_url": f"/results/{os.path.basename(output_path)}"
-        }
+         return FileResponse(
+            output_path,
+            media_type="audio/wav",
+            filename=os.path.basename(output_path)
     
     except Exception as e:
         return {

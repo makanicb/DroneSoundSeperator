@@ -6,7 +6,7 @@ import os
 import yaml
 from src.inference.model_loader import load_model
 from src.utils import stft, istft
-from src.inference.schemas import SeparationResponse, SeparationRequest, HealthCheck
+from src.inference.schemas import SeparationResponse, HealthCheck
 
 # Load config
 with open("configs/inference.yaml") as f:

@@ -56,17 +56,18 @@ async def separate_audio(file_upload: UploadFile = File(...)):
             )
 
         # Add batch dimension [1, 16, samples]
-        waveform = waveform.unsqueeze(0)
-        
-        # Compute STFT [1, 16, freq_bins, time_frames]
-        spec = stft(waveform)
+        # Validate and reshape
+        if waveform.dim() == 1:  # Mono audio
+            waveform = waveform.unsqueeze(0).unsqueeze(0)  # [1, 1, samples]
+        elif waveform.dim() == 2:  # Multi-channel (e.g., 16 channels)
+            waveform = waveform.unsqueeze(0)  # [1, 16, samples]
+
+        # Verify shape matches model expectations
+        print("Final waveform shape:", waveform.shape)  # Should be [1, 16, samples]
         
         # Process through model
-        mask = model(spec)
-        clean_spec = spec * mask
-        
-        # Reconstruct audio [1, 16, samples]
-        clean_wav = istft(clean_spec)
+        with torch.no_grad():
+            clean_wav = model(waveform)
         
         # Save multi-channel output
         torchaudio.save(output_path, clean_wav.squeeze(0), sr)  # [16, samples]

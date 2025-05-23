@@ -3,15 +3,15 @@ from fastapi.responses import FileResponse
 import torchaudio
 import os
 import yaml
-from model_loader import load_model
+from src.inference.model_loader import load_model
 from src.utils import stft, istft
-from schemas import SeparationResponse, HealthCheck  # Add missing imports
+from src.inference.schemas import SeparationResponse, HealthCheck  # Add missing imports
 
 # Load config
 with open("configs/inference.yaml") as f:
     config = yaml.safe_load(f)
 
-app = FastAPI()
+app = FastAPI(title="Drone Sound Separator API")
 model = load_model("experiments/run1/ckpt_best.pt", device=config["device"])
 
 @app.get("/health", response_model=HealthCheck)

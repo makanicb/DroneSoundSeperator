@@ -8,6 +8,9 @@ from src.inference.model_loader import load_model
 from src.utils import stft, istft
 from src.inference.schemas import SeparationResponse, HealthCheck
 
+# Temp for error resolution
+import traceback
+
 # Load config
 with open("configs/inference.yaml") as f:
     config = yaml.safe_load(f)
@@ -41,17 +44,32 @@ async def separate_audio(file_upload: UploadFile = File(...)):
             f.write(content)
         
         # Process audio
+        # Load audio
         waveform, sr = torchaudio.load(input_path)
-        print("Input shape:", waveform.unsqueeze(0).shape)
-        spec = stft(waveform.unsqueeze(0))  # Add batch dimension
-        print("STFT shape:", spec.shape)
-        with torch.no_grad():
-            mask = model(spec)
-        clean_spec = spec * mask
-        clean_wav = istft(clean_spec).squeeze(0)  # Remove batch dimension
         
-        # Save result
-        torchaudio.save(output_path, clean_wav, sr)
+        # Validate 16 channels
+        num_channels = waveform.size(0)
+        if num_channels != 16:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Audio must have 16 channels (got {num_channels})"
+            )
+
+        # Add batch dimension [1, 16, samples]
+        waveform = waveform.unsqueeze(0)
+        
+        # Compute STFT [1, 16, freq_bins, time_frames]
+        spec = stft(waveform)
+        
+        # Process through model
+        mask = model(spec)
+        clean_spec = spec * mask
+        
+        # Reconstruct audio [1, 16, samples]
+        clean_wav = istft(clean_spec)
+        
+        # Save multi-channel output
+        torchaudio.save(output_path, clean_wav.squeeze(0), sr)  # [16, samples]
         
         return FileResponse(
            output_path,
@@ -60,7 +78,7 @@ async def separate_audio(file_upload: UploadFile = File(...)):
         )
     
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(traceback.format_exc())
         return {
             "success": False,
             "message": "Processing failed",

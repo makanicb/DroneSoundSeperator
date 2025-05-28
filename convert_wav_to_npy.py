@@ -88,7 +88,10 @@ def convert_dataset(src_root, dest_root):
         files = list(input_dir.glob("*.wav"))
         
         # Process files one at a time
-        for wav_file in tqdm(files[:min_len], desc="Converting files"):
+        for wav_file in tqdm(
+            random.Random(42).sample(a, max_len), 
+            desc="Converting files"
+        ):
             process_audio(wav_file, output_dir)
             gc.collect()  # Force cleanup between files
 

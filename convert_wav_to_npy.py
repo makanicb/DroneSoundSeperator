@@ -89,7 +89,7 @@ def convert_dataset(src_root, dest_root):
         
         # Process files one at a time
         for wav_file in tqdm(
-            random.Random(42).sample(a, max_len), 
+            random.Random(42).sample(files, max_len), 
             desc="Converting files"
         ):
             process_audio(wav_file, output_dir)

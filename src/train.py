@@ -143,7 +143,7 @@ def create_data_loaders(config, device):
     val_loader = create_data_loader(
         val_dataset,
         batch_size=config["validation"]["batch_size"],
-        num_workers=config["num_workers"],
+        num_workers=0,
         shuffle=False
     )
 

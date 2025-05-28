@@ -133,7 +133,7 @@ def create_data_loaders(config, device):
     )
 
     train_loader = DataLoader(train_dataset, batch_size=config["training"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config["validation"]["batch_size"])
+    val_loader = DataLoader(val_dataset, batch_size=config["validation"]["batch_size"], pin_memory=True)
     return train_loader, val_loader
 
 def create_optimizer(config, model):
@@ -259,8 +259,8 @@ def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
             if max_val_steps is not None and batch_idx >= max_val_steps:
                 break            
 
-            mixed = mixed.to(device)
-            clean = clean.to(device)
+            mixed = mixed.to(device, non_blocking=True)
+            clean = clean.to(device, non_blocking=True)
 
             with torch.cuda.amp.autocast(enabled=config['validation']['use_amp']):
                 est_waveform = model(mixed)

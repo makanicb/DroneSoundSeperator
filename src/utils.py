@@ -228,6 +228,7 @@ def save_audio(audio_tensor, output_path, sample_rate=16000):
 def save_comparison_samples(clean, mixed, estimate, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     for i, (c, m, e) in enumerate(zip(clean, mixed, estimate)):
-        sf.write(f"{output_dir}/sample_{i}_clean.wav", c.cpu().numpy(), 44100)
-        sf.write(f"{output_dir}/sample_{i}_mixed.wav", m.cpu().numpy(), 44100)
-        sf.write(f"{output_dir}/sample_{i}_estimate.wav", e.cpu().numpy(), 44100)
+        print(f"Clean shape: {c.shape}")
+        sf.write(f"{output_dir}/sample_{i}_clean.wav", c.cpu().numpy().T, 44100)
+        sf.write(f"{output_dir}/sample_{i}_mixed.wav", m.cpu().numpy().T, 44100)
+        sf.write(f"{output_dir}/sample_{i}_estimate.wav", e.cpu().numpy().T, 44100)

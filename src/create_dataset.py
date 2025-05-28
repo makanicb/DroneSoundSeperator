@@ -39,9 +39,9 @@ def create_dataset(config_path):
     with open(config_path) as f:
         config = yaml.safe_load(f)
     
-    data_dir = Path(config['data_dir'])
-    clean_dir = Path(config['clean_dir'])
-    noise_dir = Path(config['noise_dir'])
+    data_dir = Path(config['data']['mixtures_dir'])
+    clean_dir = Path(config['data']['clean_dir'])
+    noise_dir = Path(config['data']['noise_dir'])
     
     clean_files = list(clean_dir.glob('*.npy'))
     noise_files = list(noise_dir.glob('*.npy'))

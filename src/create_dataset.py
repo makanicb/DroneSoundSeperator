@@ -58,7 +58,7 @@ def create_dataset(config_path):
             continue
         
         # Process all SNR levels for this clean file
-        for snr in config['snr_levels']:
+        for snr in config['data']['snr_levels']:
             noise_path = random.choice(noise_files)
             noise = None
             mixed = None

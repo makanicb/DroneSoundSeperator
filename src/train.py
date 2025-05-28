@@ -12,7 +12,7 @@ from tqdm import tqdm
 import time
 from datetime import datetime
 
-from src.data_loader import MultiChannelDroneDataset
+from src.data_loader import MultiChannelDroneDataset, create_data_loader
 from src.model import UNetSeparator
 from src.utils import stft, istft, si_sdr_loss, compute_sdr_sir_sar, save_comparison_samples
 

@@ -136,14 +136,14 @@ def create_data_loaders(config, device):
     train_loader = create_data_loader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
-        num_workers=num_workers,
+        num_workers=config["num_workers"],
         shuffle=True
     )
     
     val_loader = create_data_loader(
         val_dataset,
         batch_size=config["validation"]["batch_size"],
-        num_workers=num_workers,
+        num_workers=config["num_workers"],
         shuffle=False
     )
 

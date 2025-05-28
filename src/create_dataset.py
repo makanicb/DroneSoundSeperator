@@ -42,6 +42,9 @@ def create_dataset(config_path):
     data_dir = Path(config['data']['mixtures_dir'])
     clean_dir = Path(config['data']['clean_dir'])
     noise_dir = Path(config['data']['noise_dir'])
+
+    # Make the mixture directory if it does not already exist
+    data_dir.mkdir(exist_ok=True)
     
     clean_files = list(clean_dir.glob('*.npy'))
     noise_files = list(noise_dir.glob('*.npy'))

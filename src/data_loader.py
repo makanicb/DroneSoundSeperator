@@ -3,17 +3,20 @@
 import os
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import json
 import logging
 from pathlib import Path
+from collections import OrderedDict
+import time
+import psutil
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MultiChannelDroneDataset(Dataset):
-    """Dataset for multi-channel drone audio processing."""
+    """Optimized Dataset for multi-channel drone audio processing with caching."""
     
     def __init__(
         self,
@@ -25,10 +28,14 @@ class MultiChannelDroneDataset(Dataset):
         chunk_size_seconds: float = 3.0,
         mode: str = "train",
         split: float = 0.8,
+        cache_size: int = 1000,  # Cache size in items
     ):
         # Store parameters as attributes
         self.sample_rate = sample_rate
         self.chunk_size_seconds = chunk_size_seconds
+        self.cache = OrderedDict()  # LRU cache
+        self.cache_size = cache_size
+        self.target_length = int(self.chunk_size_seconds * self.sample_rate)
 
         # Load dataset_overview.json
         with open(dataset_overview_path, "r") as f:
@@ -56,12 +63,19 @@ class MultiChannelDroneDataset(Dataset):
             self.sessions = self.sessions[split_idx:]
 
         self.indices = list(range(len(self.sessions)))
-        logging.info(f"Initialized dataset with {len(self.sessions)} {mode} samples")
+        logging.info(f"Initialized dataset with {len(self.sessions)} {mode} samples (cache size: {cache_size})")
         
     def __len__(self):
         return len(self.sessions)
 
     def __getitem__(self, idx):
+        # Check cache first
+        if idx in self.cache:
+            # Move to end to mark as recently used
+            data = self.cache.pop(idx)
+            self.cache[idx] = data
+            return data
+
         session = self.sessions[idx]
     
         try:
@@ -74,20 +88,30 @@ class MultiChannelDroneDataset(Dataset):
             clean_audio = np.load(clean_path)
     
             # 3. Ensure shapes match (pad/truncate if needed)
-            target_length = int(self.chunk_size_seconds * self.sample_rate)
-            mixed_audio = self._ensure_length(mixed_audio, target_length)
-            clean_audio = self._ensure_length(clean_audio, target_length)
+            mixed_audio = self._ensure_length(mixed_audio, self.target_length)
+            clean_audio = self._ensure_length(clean_audio, self.target_length)
     
             # 4. Convert to tensors and normalize
             mixed_tensor = torch.from_numpy(mixed_audio).float().permute(1, 0)  # [C, S]
             clean_tensor = torch.from_numpy(clean_audio).float().permute(1, 0)  # [C, S]
     
-            return mixed_tensor, clean_tensor
+            result = (mixed_tensor, clean_tensor)
+            
+            # Add to cache if there's space
+            if len(self.cache) < self.cache_size:
+                self.cache[idx] = result
+            else:
+                # Remove oldest item if cache is full
+                self.cache.popitem(last=False)
+                self.cache[idx] = result
+                
+            return result
 
         except Exception as e:
             logger.error(f"Error loading session {session['session_id']}: {str(e)}")
-            # Return silent dummy audio
-            return torch.zeros(16, int(self.sample_rate * self.chunk_size_seconds)), metadata
+            # Return silent dummy audio with correct shape
+            dummy_audio = torch.zeros(16, self.target_length)
+            return dummy_audio, dummy_audio
     
     def _ensure_length(self, audio: np.ndarray, target_samples: int) -> np.ndarray:
         """Pad or truncate audio to target length."""
@@ -176,3 +200,33 @@ def load_and_preprocess_npy(file_path, target_sr=44100):
     except Exception as e:
         logger.error(f"Error loading {file_path}: {str(e)}")
         return None
+
+def create_data_loader(dataset, batch_size, num_workers, shuffle=False):
+    """
+    Create optimized DataLoader with caching, prefetching, and pinned memory.
+    
+    Args:
+        dataset: Initialized dataset
+        batch_size: Batch size
+        num_workers: Number of parallel workers
+        shuffle: Whether to shuffle data
+        
+    Returns:
+        Optimized DataLoader instance
+    """
+    # Automatically reduce workers if memory constrained
+    if psutil.virtual_memory().percent > 85:
+        reduced_workers = max(1, num_workers // 2)
+        logger.warning(f"High memory usage ({psutil.virtual_memory().percent}%). "
+                       f"Reducing workers from {num_workers} to {reduced_workers}")
+        num_workers = reduced_workers
+    
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=True,
+        prefetch_factor=2 if num_workers > 0 else None,
+        persistent_workers=num_workers > 0,
+    )

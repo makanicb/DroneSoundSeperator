@@ -132,8 +132,21 @@ def create_data_loaders(config, device):
         split=config["data"]["train_test_split"],
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=config["training"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config["validation"]["batch_size"], pin_memory=True)
+    # Create optimized loaders
+    train_loader = create_data_loader(
+        train_dataset,
+        batch_size=config["training"]["batch_size"],
+        num_workers=num_workers,
+        shuffle=True
+    )
+    
+    val_loader = create_data_loader(
+        val_dataset,
+        batch_size=config["validation"]["batch_size"],
+        num_workers=num_workers,
+        shuffle=False
+    )
+
     return train_loader, val_loader
 
 def create_optimizer(config, model):

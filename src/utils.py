@@ -135,14 +135,13 @@ def compute_sdr_sir_sar(reference, estimation):
     # Make sure they are numpy arrays
     reference = np.asarray(reference)
     estimation = np.asarray(estimation)
-    
-    # Initialize metrics
-    sdr_values = []
-    sir_values = []
-    sar_values = []
-    
-    num_channels = reference.shape[0]
 
+    # Ensure correct shape: (channels, samples)
+    if reference.ndim == 1:
+        reference = reference[np.newaxis, :]
+    if estimation.ndim == 1:
+        estimation = estimation[np.newaxis, :]
+    
     try:
         import mir_eval.separation
         
@@ -154,17 +153,17 @@ def compute_sdr_sir_sar(reference, estimation):
         )
         
         # Average metrics
-        avg_sdr = np.mean(sdr_values)
-        avg_sir = np.mean(sir_values)
-        avg_sar = np.mean(sar_values)
+        avg_sdr = np.mean(sdr)
+        avg_sir = np.mean(sir)
+        avg_sar = np.mean(sar)
         
         return {
             'sdr': avg_sdr,
             'sir': avg_sir,
             'sar': avg_sar,
-            'sdr_per_channel': sdr_values.tolist(),
-            'sir_per_channel': sir_values.tolist(),
-            'sar_per_channel': sar_values.tolist()
+            'sdr_per_channel': sdr.tolist(),
+            'sir_per_channel': sir.tolist(),
+            'sar_per_channel': sar.tolist()
         }
         
     except ImportError:

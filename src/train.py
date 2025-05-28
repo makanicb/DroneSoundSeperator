@@ -425,9 +425,9 @@ def update_metrics(metrics_dict, clean_audio, estimated_audio):
         metrics = compute_sdr_sir_sar(clean_sample, est_sample)
         
         # Append results
-        metrics_dict['sdr'].append(metrics['sdr'])
-        metrics_dict['sir'].append(metrics['sir'])
-        metrics_dict['sar'].append(metrics['sar'])
+        metrics_dict['sdr'].append(metrics['sdr'].item())
+        metrics_dict['sir'].append(metrics['sir'].item())
+        metrics_dict['sar'].append(metrics['sar'].item())
 
 def free_memory():
     if torch.cuda.is_available():

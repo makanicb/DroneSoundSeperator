@@ -28,7 +28,7 @@ class MultiChannelDroneDataset(Dataset):
         chunk_size_seconds: float = 3.0,
         mode: str = "train",
         split: float = 0.8,
-        cache_size: int = 1000,  # Cache size in items
+        cache_size: int = 100,  # Cache size in items
     ):
         # Store parameters as attributes
         self.sample_rate = sample_rate

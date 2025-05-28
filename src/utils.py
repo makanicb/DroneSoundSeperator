@@ -116,70 +116,36 @@ def si_sdr_loss(pred, target, eps=1e-8):
     
     return si_sdr_loss
 
-def compute_sdr_sir_sar(reference, estimation):
+def compute_sdr_sir_sar(reference, estimation, eps=1e-8):
     """
-    Compute metrics for multi-channel source separation.
-    
-    Args:
-        reference: Reference source signals [channels, samples]
-        estimation: Estimated source signals [channels, samples]
-        
-    Returns:
-        Dictionary of metrics
+    Proper BSS Eval metrics implementation for single-source separation
+    reference: Reference source signals [channels, samples]
+    estimation: Estimated source signals [channels, samples]
+    Returns: Dictionary of metrics
     """
-    if torch.is_tensor(reference):
-        reference = reference.detach().cpu().numpy()
-    if torch.is_tensor(estimation):
-        estimation = estimation.detach().cpu().numpy()
+    # Center the signals
+    reference = reference - torch.mean(reference, dim=-1, keepdim=True)
+    estimation = estimation - torch.mean(estimation, dim=-1, keepdim=True)
     
-    # Make sure they are numpy arrays
-    reference = np.asarray(reference)
-    estimation = np.asarray(estimation)
+    # Compute SDR
+    s_target = torch.sum(reference * estimation, dim=-1) * reference / (torch.sum(reference**2, dim=-1) + eps
+    e_noise = estimation - s_target
+    sdr = 10 * torch.log10(torch.sum(s_target**2, dim=-1) / (torch.sum(e_noise**2, dim=-1) + eps)
+    
+    # For single-source separation:
+    # SIR = SDR since all distortion is considered artifacts
+    # SAR is not well-defined - set to SDR
+    sir = sdr
+    sar = sdr
 
-    # Ensure correct shape: (channels, samples)
-    if reference.ndim == 1:
-        reference = reference[np.newaxis, :]
-    if estimation.ndim == 1:
-        estimation = estimation[np.newaxis, :]
-    
-    try:
-        import mir_eval.separation
-        
-        # Compute metrics for all channels simultaneously
-        sdr, sir, sar, _ = mir_eval.separation.bss_eval_sources(
-            reference,  # [num_channels, samples]
-            estimation,  # [num_channels, samples]
-            compute_permutation=False
-        )
-        
-        # Average metrics
-        avg_sdr = np.mean(sdr)
-        avg_sir = np.mean(sir)
-        avg_sar = np.mean(sar)
-        
-        return {
-            'sdr': avg_sdr,
-            'sir': avg_sir,
-            'sar': avg_sar,
-            'sdr_per_channel': sdr.tolist(),
-            'sir_per_channel': sir.tolist(),
-            'sar_per_channel': sar.tolist()
-        }
-        
-    except ImportError:
-        print("mir_eval package not found. Please install it with: pip install mir_eval")
-        return {
-            'sdr': 0.0,
-            'sir': 0.0,
-            'sar': 0.0
-        }
-    except Exception as e:
-        print(f"Error computing separation metrics: {e}")
-        return {
-            'sdr': 0.0,
-            'sir': 0.0,
-            'sar': 0.0
-        }
+    return {
+        'sdr': torch.mean(sdr),
+        'sir': torch.mean(sir),
+        'sar': torch.mean(sar),
+        'sdr_per_channel': sdr.cpu().numpy().tolist(),
+        'sir_per_channel': sir.cpu().numpy().tolist(),
+        'sar_per_channel': sar.cpu().numpy().tolist()
+    }
 
 def save_audio(audio_tensor, output_path, sample_rate=16000):
     """

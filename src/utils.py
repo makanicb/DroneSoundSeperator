@@ -146,21 +146,12 @@ def compute_sdr_sir_sar(reference, estimation):
     try:
         import mir_eval.separation
         
-        # For each channel, compute metrics
-        for ch in range(num_channels):
-            ref_ch = reference[ch:ch+1]  # Keep dimension for mir_eval
-            est_ch = estimation[ch:ch+1]  # Keep dimension for mir_eval
-            
-            # Compute metrics
-            sdr, sir, sar, _ = mir_eval.separation.bss_eval_sources(
-                ref_ch,
-                est_ch,
-                compute_permutation=False
-            )
-            
-            sdr_values.append(sdr[0])
-            sir_values.append(sir[0])
-            sar_values.append(sar[0])
+        # Compute metrics for all channels simultaneously
+        sdr, sir, sar, _ = mir_eval.separation.bss_eval_sources(
+            reference,  # [num_channels, samples]
+            estimation,  # [num_channels, samples]
+            compute_permutation=False
+        )
         
         # Average metrics
         avg_sdr = np.mean(sdr_values)
@@ -171,9 +162,9 @@ def compute_sdr_sir_sar(reference, estimation):
             'sdr': avg_sdr,
             'sir': avg_sir,
             'sar': avg_sar,
-            'sdr_per_channel': sdr_values,
-            'sir_per_channel': sir_values,
-            'sar_per_channel': sar_values
+            'sdr_per_channel': sdr_values.tolist(),
+            'sir_per_channel': sir_values.tolist(),
+            'sar_per_channel': sar_values.tolist()
         }
         
     except ImportError:
@@ -228,7 +219,6 @@ def save_audio(audio_tensor, output_path, sample_rate=16000):
 def save_comparison_samples(clean, mixed, estimate, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     for i, (c, m, e) in enumerate(zip(clean, mixed, estimate)):
-        print(f"Clean shape: {c.shape}")
         sf.write(f"{output_dir}/sample_{i}_clean.wav", c.cpu().numpy().T, 44100)
         sf.write(f"{output_dir}/sample_{i}_mixed.wav", m.cpu().numpy().T, 44100)
         sf.write(f"{output_dir}/sample_{i}_estimate.wav", e.cpu().numpy().T, 44100)

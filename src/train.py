@@ -277,7 +277,7 @@ def validate(model, loader, device, config, writer, epoch, max_val_steps=None):
             })
 
             # Audio Comparison Samples
-            if epoch % config['validation']['save_samples_interval'] == 0:
+            if epoch % config['validation']['save_samples_interval'] == 0 and batch_idx == 0:
                 save_comparison_samples(
                     clean[:2],  # Save first 2 samples
                     mixed[:2], 

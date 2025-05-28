@@ -3,6 +3,7 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
+import soundfile as sf
 import os
 
 def stft(wav, n_fft=2048, hop_length=441, win_length=2048):
@@ -211,7 +212,6 @@ def save_audio(audio_tensor, output_path, sample_rate=16000):
     else:
         # For other formats, use soundfile/librosa
         try:
-            import soundfile as sf
             
             # Save as multi-channel wav
             # Transpose to [samples, channels] for soundfile

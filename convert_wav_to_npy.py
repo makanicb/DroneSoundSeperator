@@ -76,6 +76,8 @@ def convert_dataset(src_root, dest_root):
         "yes_drone": "clean_drone_16ch",
         "unknown": "noise_16ch"
     }
+
+    min_len = min([len(list((Path(src_root)/category).glob("*.wav"))) for category in categories])
     
     for src_category, dest_category in categories.items():
         input_dir = Path(src_root) / src_category
@@ -86,7 +88,7 @@ def convert_dataset(src_root, dest_root):
         files = list(input_dir.glob("*.wav"))
         
         # Process files one at a time
-        for wav_file in tqdm(files, desc="Converting files"):
+        for wav_file in tqdm(files[:min_len], desc="Converting files"):
             process_audio(wav_file, output_dir)
             gc.collect()  # Force cleanup between files
 

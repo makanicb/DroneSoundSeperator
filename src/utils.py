@@ -118,7 +118,7 @@ def si_sdr_loss(pred, target, eps=1e-8):
 
 def compute_sdr_sir_sar(reference, estimation, eps=1e-8):
     """
-    Proper BSS Eval metrics implementation for single-source separation
+    PyTorch implementation of BSS Eval metrics
     reference: Reference source signals [channels, samples]
     estimation: Estimated source signals [channels, samples]
     Returns: Dictionary of metrics
@@ -127,10 +127,20 @@ def compute_sdr_sir_sar(reference, estimation, eps=1e-8):
     reference = reference - torch.mean(reference, dim=-1, keepdim=True)
     estimation = estimation - torch.mean(estimation, dim=-1, keepdim=True)
     
-    # Compute SDR
-    s_target = torch.sum(reference * estimation, dim=-1) * reference / (torch.sum(reference**2, dim=-1) + eps
+    # Compute projection of estimation onto reference (s_target)
+    dot = torch.sum(reference * estimation, dim=-1, keepdim=True)
+    ref_power = torch.sum(reference**2, dim=-1, keepdim=True) + eps
+    scale = dot / ref_power
+    s_target = scale * reference
+
+    # Error terms
     e_noise = estimation - s_target
-    sdr = 10 * torch.log10(torch.sum(s_target**2, dim=-1) / (torch.sum(e_noise**2, dim=-1) + eps)
+    
+    # Compute SDR
+    sdr = 10 * torch.log10(
+        torch.sum(s_target**2, dim=-1) / 
+        (torch.sum(e_noise**2, dim=-1) + eps)
+    )
     
     # For single-source separation:
     # SIR = SDR since all distortion is considered artifacts

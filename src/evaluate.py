@@ -6,6 +6,7 @@ import yaml
 import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
+import pickle
 
 from data_loader import MultiChannelDroneDataset
 from model import UNetSeparator
@@ -30,13 +31,10 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     try:
         # First try with weights_only=True (default in PyTorch 2.6+)
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    except RuntimeError as e:
-        if "weights_only" in str(e) or "allowed global" in str(e):
-            print(f"Retrying checkpoint load without weights_only restriction")
-            # Fallback to weights_only=False for compatibility
-            checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        else:
-            raise e
+    except pickle.UpicklingError as e:
+        print(f"Retrying checkpoint load without weights_only restriction")
+        # Fallback to weights_only=False for compatibility
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     state_dict = checkpoint['model_state_dict']
     if isinstance(model, torch.nn.DataParallel) and not any(k.startswith('module.') for k in state_dict.keys()):

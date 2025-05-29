@@ -31,7 +31,7 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     try:
         # First try with weights_only=True (default in PyTorch 2.6+)
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    except pickle.UpicklingError as e:
+    except pickle.UnpicklingError as e:
         print(f"Retrying checkpoint load without weights_only restriction")
         # Fallback to weights_only=False for compatibility
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)

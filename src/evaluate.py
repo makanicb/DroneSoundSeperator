@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from data_loader import MultiChannelDroneDataset
 from model import UNetSeparator
-from utils import compute_sdr_sir_sar  # Only need metrics now
+from utils import compute_sdr_sir_sar
 
 def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     # Load config
@@ -27,7 +27,17 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     ).to(device)
     
     # Load checkpoint with DataParallel handling
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    try:
+        # First try with weights_only=True (default in PyTorch 2.6+)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except RuntimeError as e:
+        if "weights_only" in str(e) or "allowed global" in str(e):
+            print(f"Retrying checkpoint load without weights_only restriction")
+            # Fallback to weights_only=False for compatibility
+            checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        else:
+            raise e
+
     state_dict = checkpoint['model_state_dict']
     if isinstance(model, torch.nn.DataParallel) and not any(k.startswith('module.') for k in state_dict.keys()):
         state_dict = {'module.' + k: v for k, v in state_dict.items()}

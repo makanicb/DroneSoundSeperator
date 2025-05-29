@@ -7,6 +7,7 @@ from tqdm import tqdm
 import logging
 import argparse
 import gc
+import random
 
 def process_chunk(chunk, orig_sr, target_sr=44100, target_channels=16, max_duration=3.0):
     """Process individual audio chunk with memory efficiency"""

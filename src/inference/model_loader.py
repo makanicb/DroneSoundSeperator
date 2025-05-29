@@ -8,7 +8,7 @@ def load_model(checkpoint_path, device="cpu"):
         # Add other required model parameters from your config
     )
     
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     state_dict = checkpoint['model_state_dict']
     
     # Handle DataParallel/normal checkpoints

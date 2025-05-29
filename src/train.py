@@ -315,7 +315,7 @@ def handle_checkpoints(config, model, optimizer, scheduler, epoch, val_loss,
         
     if (epoch + 1) % config['checkpoints']['save_frequency'] == 0:
         save_checkpoint(config, model, optimizer, scheduler, epoch, 
-                       best_val_loss, early_stopping_counter, metrics, "latest")
+                       best_val_loss, early_stopping_counter, metrics, f"epoch_{epoch}")
 
     # Early stopping check with scheduler reset
     if early_stopping_counter >= config['training']['early_stopping']['patience']:

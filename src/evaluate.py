@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from data_loader import DroneMixtureDataset
+from data_loader import MultiChannelDroneDataset
 from model import UNetSeparator
 from utils import stft, istft, compute_sdr_sir_sar
 

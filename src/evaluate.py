@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from data_loader import MultiChannelDroneDataset
 from model import UNetSeparator
-from utils import stft, istft, compute_sdr_sir_sar
+from utils import compute_sdr_sir_sar  # Only need metrics now
 
 def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     # Load config
@@ -20,21 +20,37 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     device = torch.device(config['device'] if torch.cuda.is_available() else 'cpu')
     print(f"Evaluation device: {device}")
     
-    # Model setup
-    model = UNetSeparator().to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device)['model_state_dict'])
+    # Model setup with parameters from config
+    model = UNetSeparator(
+        input_channels=config['model']['in_channels'],
+        base_channels=config['model']['base_channels']
+    ).to(device)
+    
+    # Load checkpoint with DataParallel handling
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    state_dict = checkpoint['model_state_dict']
+    if isinstance(model, torch.nn.DataParallel) and not any(k.startswith('module.') for k in state_dict.keys()):
+        state_dict = {'module.' + k: v for k, v in state_dict.items()}
+    elif not isinstance(model, torch.nn.DataParallel) and any(k.startswith('module.') for k in state_dict.keys()):
+        state_dict = {k.replace('module.', '', 1): v for k, v in state_dict.items()}
+    model.load_state_dict(state_dict)
+    
     model.eval()
     
     # Evaluation parameters
     batch_size = batch_size or config['evaluation'].get('batch_size', 8)
     use_amp = config['evaluation'].get('use_amp', True)
     
-    # Data loader
-    test_set = DroneMixtureDataset(
-        data_dir=config['data_dir'],
-        snr_levels=config['snr_levels'],
-        sample_rate=config['sample_rate'],
-        mode='test'
+    # Data loader - updated to MultiChannelDroneDataset
+    test_set = MultiChannelDroneDataset(
+        mixtures_dir=config['data']['mixtures_dir'],
+        clean_dir=config['data']['clean_dir'],
+        noise_dir=config['data']['noise_dir'],
+        dataset_overview_path=config['data']['dataset_overview'],
+        sample_rate=config['data']['sample_rate'],
+        chunk_size_seconds=config['data']['max_audio_length'],
+        mode='test',
+        split=config['data']['train_test_split']
     )
     
     test_loader = DataLoader(
@@ -60,7 +76,7 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     with torch.inference_mode():
         for batch in tqdm(test_loader, desc="Evaluating"):
             try:
-                batch_results = process_batch(batch, model, device, config, use_amp)
+                batch_results = process_batch(batch, model, device, use_amp)
                 results['sdr'].extend(batch_results['sdr'])
                 results['sir'].extend(batch_results['sir'])
                 results['sar'].extend(batch_results['sar'])
@@ -68,7 +84,7 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
             except RuntimeError as e:  # Handle OOM
                 if 'CUDA out of memory' in str(e):
                     print(f"OOM detected, processing batch in smaller chunks")
-                    process_batch_chunked(batch, model, device, config, results, use_amp)
+                    process_batch_chunked(batch, model, device, results, use_amp)
                 else:
                     raise e
                     
@@ -91,7 +107,7 @@ def evaluate(config_path, checkpoint_path, output_dir=None, batch_size=None):
     
     return results
 
-def process_batch(batch, model, device, config, use_amp):
+def process_batch(batch, model, device, use_amp):
     noisy, clean, *metadata = batch
     metadata = metadata[0] if metadata else [None]*len(noisy)
     
@@ -99,39 +115,40 @@ def process_batch(batch, model, device, config, use_amp):
     clean = clean.to(device, non_blocking=True)
     
     with torch.cuda.amp.autocast(enabled=use_amp):
-        X = stft(noisy, 
-                n_fft=config['n_fft'],
-                hop_length=config['hop_length'],
-                win_length=config['win_length'])
-        mask = model(torch.abs(X))
-        est_wav = reconstruct_audio(X, mask, config)
-        
+        # Model directly outputs estimated waveform
+        est_wav = model(noisy)
+    
     return calculate_metrics(clean, est_wav, metadata)
 
-def process_batch_chunked(batch, model, device, config, results, use_amp):
+def process_batch_chunked(batch, model, device, results, use_amp):
     chunk_size = max(1, batch[0].shape[0] // 2)
     for i in range(0, batch[0].shape[0], chunk_size):
         chunk = [t[i:i+chunk_size] for t in batch]
-        chunk_results = process_batch(chunk, model, device, config, use_amp)
+        chunk_results = process_batch(chunk, model, device, use_amp)
         results['sdr'].extend(chunk_results['sdr'])
         results['sir'].extend(chunk_results['sir'])
         results['sar'].extend(chunk_results['sar'])
         results['metadata'].extend(chunk_results['metadata'])
 
 def calculate_metrics(clean, est_wav, metadata):
-    clean_np = clean.cpu().numpy()
-    est_np = est_wav.float().cpu().numpy()
-    
+    # Keep tensors on device for efficiency
     metrics = {'sdr': [], 'sir': [], 'sar': [], 'metadata': []}
-    for i in range(clean_np.shape[0]):
+    
+    for i in range(clean.shape[0]):
         try:
-            sdr, sir, sar = compute_sdr_sir_sar(clean_np[i], est_np[i])
-            metrics['sdr'].append(sdr)
-            metrics['sir'].append(sir)
-            metrics['sar'].append(sar)
+            # Compute metrics per sample
+            metric_dict = compute_sdr_sir_sar(clean[i], est_wav[i])
+            metrics['sdr'].append(metric_dict['sdr'].item())
+            metrics['sir'].append(metric_dict['sir'].item())
+            metrics['sar'].append(metric_dict['sar'].item())
             metrics['metadata'].append(metadata[i] if metadata else None)
         except Exception as e:
             print(f"Error calculating metrics: {e}")
+            # Append zeros to maintain alignment
+            metrics['sdr'].append(0.0)
+            metrics['sir'].append(0.0)
+            metrics['sar'].append(0.0)
+            metrics['metadata'].append(metadata[i] if metadata else None)
             
     return metrics
 

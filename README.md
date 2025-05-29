@@ -1,6 +1,49 @@
 # DroneSoundSeparator
 
-🚁 A neural network project to isolate drone sounds from noisy environments, inspired by modern audio separation techniques.
+🚁 A neural network project to isolate drone sounds from noisy environments using 16-channel audio processing and modern audio separation techniques.
+
+## Project Overview
+
+DroneSoundSeparator provides end-to-end waveform processing for multi-channel drone audio separation. The system processes 16-channel WAV files through a complete pipeline: **16-channel WAV → API → STFT → UNet Mask → iSTFT → Cleaned 16-channel WAV**.
+
+**Requirements:**
+- CUDA 12.2+ for GPU acceleration
+- 16-channel audio input (exact requirement)
+- Python 3.11 environment
+
+## Quickstart Guide
+
+### Installation
+```bash
+# Clone and setup
+git clone https://github.com/yourrepo/drone-sound-separation
+conda create -n dss python=3.11
+conda activate dss
+pip install -e ".[dev]"
+
+# Start API
+uvicorn src.inference.app:app --reload
+```
+
+### API Usage Example
+```bash
+# Process 16-channel audio file
+curl -X POST -F "file_upload=@16channel_recording.wav" http://localhost:8000/separate --output cleaned.wav
+```
+
+## Input Requirements
+
+```
+-----------------------------------------------
+| Parameter       | Requirement               |
+-----------------------------------------------
+| Channels        | 16 (exact)                |
+| Sample Rate     | 44.1kHz or 48kHz          |
+| Bit Depth       | 16-bit PCM                |
+| Duration        | 1-30 seconds              |
+| Max File Size   | 50MB                      |
+-----------------------------------------------
+```
 
 ## Key Improvements
 
@@ -9,12 +52,7 @@
 - ✅ **Optimized Evaluation** - Reduced GPU memory footprint
 - ✅ **Enhanced Reproducibility** - Full RNG state tracking
 - ✅ **Dynamic Batch Handling** - Adaptive memory management
-
-## Input Specifications
-
-- Accepts multi-channel (16-channel) audio from UMA-16V2 array
-- Natively supports 44.1kHz sample rate (no resampling needed)
-- Processes audio chunks of any length (automatically split into 3s segments)
+- ✅ **16-Channel Processing** - Native multi-channel audio support
 
 ## Project Structure
 
@@ -36,7 +74,9 @@ DroneSoundSeparator/
 │   ├── train.py            # Training script
 │   ├── evaluate.py         # Evaluation script
 │   ├── demo.py             # Real-time processing demo
-│   └── utils.py            # STFT/iSTFT, helpers, metrics
+│   ├── utils.py            # STFT/iSTFT, helpers, metrics
+│   └── inference/
+│       └── app.py          # FastAPI inference server
 │
 ├── tests/
 │   ├── test_data/          # Sample audio files
@@ -53,6 +93,9 @@ DroneSoundSeparator/
 │   ├── test_perf.py        # Performance tests
 │   └── test_edge.py        # Edge cases
 │
+├── scripts/
+│   └── generate_test_audio.py  # Test audio generation
+│
 ├── configs/
 │   └── config.yaml         # Experiment configuration
 │
@@ -66,19 +109,28 @@ DroneSoundSeparator/
 └── README.md
 ```
 
+## Dependencies
+
+### Core Requirements
+- Python 3.11
+- PyTorch 2.0.1+cu118
+- Torchaudio 2.0.2
+- FastAPI 0.95.0
+- libsndfile1 (system package)
+
+### Installation
+```bash
+pip install -r requirements.txt
+```
+
 ## Setup
 
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Convert audio files:**
+1. **Convert audio files:**
    ```bash
    python convert_wav_to_npy.py --src-root /path/to/raw/audio --dest-root data
    ```
 
-3. **Create dataset:**
+2. **Create dataset:**
    ```bash
    python src/create_dataset.py --config configs/config.yaml
    ```
@@ -150,15 +202,35 @@ tensorboard --logdir experiments/run1/logs --bind_all
 
 ## Testing
 
-### Run Full Suite:
+### Generate Test Audio
 ```bash
-pytest tests/ -v --cov=src --cov-report=html
+python scripts/generate_test_audio.py --channels 16 --duration 5 --output test_16ch.wav
 ```
 
-### Key Tests:
+### Run Full Suite
+```bash
+pytest tests/ --verbose --log-level=DEBUG --cov=src --cov-report=html
+```
+
+### Key Tests
 - Training resumption consistency
 - Memory leak detection
 - 44.1kHz processing fidelity
+- 16-channel validation cases
+
+## Troubleshooting
+
+### Common Issues
+
+**"ValueError: too many values to unpack"**
+- Verify input audio has exactly 16 channels
+
+**"400: Invalid channels"**
+- Check with `soxi <file>` to validate channel count
+
+**CUDA OOM errors**
+- Reduce audio duration below 30 seconds
+- Lower batch size in configuration
 
 ## Monitoring
 
@@ -172,6 +244,28 @@ watch -n 1 nvidia-smi
 python -m torch.utils.bottleneck src/train.py --config configs/config.yaml
 ```
 
-## License
+## Contributing Guidelines
 
-MIT License - See LICENSE for details
+### Channel Dimension Rules
+- All audio processing must maintain 16-channel structure
+- Tests must include 16-channel validation cases
+- Pre-commit checks for channel count validation
+
+### Development Setup
+```bash
+pip install -r requirements-test.txt
+pre-commit install
+```
+
+## Support Resources
+
+- **Email:** audio-support@yourcompany.com
+- **Discord:** https://discord.gg/yourcommunity
+- **Status Page:** https://status.yourcompany.com
+
+## License & Citation
+
+Copyright 2025. MIT License - See LICENSE for details.
+
+If using this work in research, please cite:
+[Pending publication]
